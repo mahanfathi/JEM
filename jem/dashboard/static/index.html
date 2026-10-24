@@ -1,0 +1,1917 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JEM runs</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M1.5 12.5 5.5 7l3 3 6-7' fill='none' stroke='%232a78d6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.10);
+  --border-strong: rgba(11, 11, 11, 0.18);
+  --hover: rgba(11, 11, 11, 0.04);
+  --sel: rgba(11, 11, 11, 0.065);
+  --chip: rgba(11, 11, 11, 0.06);
+  --focus: #2a78d6;
+  --diff: #fbf0d2;
+  --shadow: 0 6px 22px rgba(11, 11, 11, 0.12);
+  --good: #0ca30c;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #6250d6;
+  --series-8: #e34948;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --ink: #f0efec;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --border-strong: rgba(255, 255, 255, 0.18);
+    --hover: rgba(255, 255, 255, 0.04);
+    --sel: rgba(255, 255, 255, 0.07);
+    --chip: rgba(255, 255, 255, 0.08);
+    --focus: #3987e5;
+    --diff: #2e2716;
+    --shadow: 0 6px 22px rgba(0, 0, 0, 0.5);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #008300;
+    --series-7: #9085e9;
+    --series-8: #e66767;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --ink: #f0efec;
+  --ink-2: #c3c2b7;
+  --muted: #898781;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --border: rgba(255, 255, 255, 0.10);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --hover: rgba(255, 255, 255, 0.04);
+  --sel: rgba(255, 255, 255, 0.07);
+  --chip: rgba(255, 255, 255, 0.08);
+  --focus: #3987e5;
+  --diff: #2e2716;
+  --shadow: 0 6px 22px rgba(0, 0, 0, 0.5);
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #9085e9;
+  --series-8: #e66767;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font: 13px/1.45 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+
+/* ---- top bar ---- */
+.top {
+  display: flex; align-items: center; gap: 18px;
+  height: 46px; padding: 0 16px;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.brand { font-weight: 650; letter-spacing: -0.01em; white-space: nowrap; }
+.brand span { color: var(--muted); font-weight: 450; margin-left: 5px; }
+.tabs { display: flex; align-self: stretch; gap: 2px; }
+.tab {
+  border: 0; background: none; padding: 0 11px; cursor: pointer;
+  color: var(--ink-2); border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.tab:hover { color: var(--ink); }
+.tab[aria-selected="true"] { color: var(--ink); font-weight: 600; border-bottom-color: var(--ink); }
+.top-right { margin-left: auto; display: flex; align-items: center; gap: 14px; min-width: 0; }
+.conn { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); white-space: nowrap; }
+.conn .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex: none; }
+.conn.live .dot { background: var(--good); animation: pulse 1.6s ease-in-out infinite; }
+.conn.off .dot { background: var(--critical); }
+.root-path {
+  font: 11.5px var(--mono); color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 36ch;
+}
+.icon-btn {
+  height: 26px; padding: 0 9px; border: 1px solid var(--border-strong); border-radius: 6px;
+  background: transparent; color: var(--ink-2); font-size: 12px; cursor: pointer; white-space: nowrap;
+}
+.icon-btn:hover { color: var(--ink); background: var(--hover); }
+
+/* ---- layout ---- */
+.layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); height: calc(100vh - 46px); }
+.side {
+  display: flex; flex-direction: column; min-height: 0;
+  background: var(--surface); border-right: 1px solid var(--border);
+}
+.side-head { display: grid; gap: 7px; padding: 10px 12px 8px; border-bottom: 1px solid var(--border); }
+.search {
+  width: 100%; height: 28px; padding: 0 9px;
+  border: 1px solid var(--border-strong); border-radius: 6px; background: var(--page);
+}
+.search:focus { outline: none; border-color: var(--focus); box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus) 22%, transparent); }
+.side-meta { display: flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--muted); }
+.side-meta .grow { flex: 1; }
+.link-btn { border: 0; background: none; padding: 1px 4px; border-radius: 4px; color: var(--ink-2); font-size: 11.5px; cursor: pointer; }
+.link-btn:hover { color: var(--ink); background: var(--hover); }
+.runs { list-style: none; margin: 0; padding: 4px 0 16px; overflow-y: auto; flex: 1; min-height: 0; }
+.run > label {
+  display: grid; grid-template-columns: 14px 14px minmax(0, 1fr); column-gap: 8px; align-items: start;
+  padding: 6px 12px 7px; cursor: pointer;
+}
+.run:hover > label { background: var(--hover); }
+.run.sel > label { background: var(--sel); }
+.run input { margin: 2px 0 0; accent-color: var(--ink); cursor: pointer; }
+.swatch { width: 14px; height: 3px; border-radius: 2px; margin-top: 8px; background: var(--grid); }
+.run.sel .swatch { background: var(--c); }
+.run-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.run-meta {
+  display: flex; align-items: center; gap: 8px; margin-top: 2px;
+  font-size: 11.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.run-age { color: var(--muted); }
+.run-cfg { margin-top: 1px; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.side-empty { padding: 14px 14px; color: var(--muted); font-size: 12px; }
+
+.badge {
+  display: inline-flex; align-items: center; gap: 4px; flex: none;
+  padding: 0 7px 0 5px; border-radius: 999px; line-height: 18px; font-size: 11px;
+  color: var(--ink); background: var(--chip);
+}
+.badge svg { width: 10px; height: 10px; flex: none; color: var(--ink-2); }
+.badge.running svg { animation: pulse 1.6s ease-in-out infinite; }
+.badge.finished { background: color-mix(in srgb, var(--good) 13%, transparent); }
+.badge.finished svg { color: var(--good); }
+.badge.failed { background: color-mix(in srgb, var(--critical) 14%, transparent); }
+.badge.failed svg { color: var(--critical); }
+.badge.diverged { background: color-mix(in srgb, var(--serious) 20%, transparent); }
+.badge.diverged svg { color: var(--serious); }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* ---- main ---- */
+.main { min-width: 0; overflow-y: auto; }
+.main, .runs, .ctable { scrollbar-width: thin; scrollbar-color: var(--axis) transparent; }
+.toolbar {
+  position: sticky; top: 0; z-index: 4;
+  display: grid; gap: 8px; padding: 9px 16px;
+  background: var(--page); border-bottom: 1px solid var(--border);
+}
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; }
+.controls .search { width: 230px; }
+.field { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-2); white-space: nowrap; }
+.field output { min-width: 2.6em; font-variant-numeric: tabular-nums; color: var(--ink); }
+input[type="range"] { width: 130px; accent-color: var(--ink); }
+.seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; background: transparent; padding: 2px 10px; font-size: 12px; color: var(--ink-2); cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--border-strong); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.legend { display: flex; flex-wrap: wrap; gap: 3px 16px; font-size: 12px; color: var(--ink-2); }
+.legend-item { display: inline-flex; align-items: center; gap: 6px; max-width: 300px; }
+.legend-item > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lkey { width: 14px; height: 3px; border-radius: 2px; background: var(--c); flex: none; }
+.empty { padding: 48px 16px; text-align: center; color: var(--ink-2); }
+
+.group { padding: 0 16px; }
+.group > summary {
+  display: flex; align-items: center; gap: 8px; padding: 12px 0 8px;
+  list-style: none; cursor: pointer; user-select: none;
+  font-size: 12px; font-weight: 650; letter-spacing: 0.02em;
+}
+.group > summary::-webkit-details-marker { display: none; }
+.group > summary::before {
+  content: ""; width: 6px; height: 6px; margin: 0 3px 2px 1px;
+  border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted);
+  transform: rotate(-45deg); transition: transform 0.12s;
+}
+.group[open] > summary::before { transform: rotate(45deg); margin-bottom: 4px; }
+.group .count { color: var(--muted); font-weight: 400; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; padding-bottom: 8px; }
+
+.card { margin: 0; min-width: 0; padding: 8px 10px 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+.card-head { display: flex; align-items: center; gap: 8px; min-height: 22px; font-size: 12px; }
+.title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.title .prefix { color: var(--muted); font-weight: 400; }
+.note { color: var(--ink-2); font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.note .warn { color: var(--muted); }
+.tools { margin-left: auto; display: flex; gap: 4px; flex: none; }
+.chip {
+  padding: 0 7px; line-height: 18px; border-radius: 999px; font-size: 11px; cursor: pointer;
+  border: 1px solid var(--border-strong); background: transparent; color: var(--ink-2);
+}
+.chip:hover { color: var(--ink); }
+.chip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--surface); }
+.plot { position: relative; height: 172px; }
+.plot canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.plot canvas.over { cursor: crosshair; }
+.plot canvas.over:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; border-radius: 4px; }
+.ctable { max-height: 172px; overflow: auto; }
+.ctable table { width: 100%; border-collapse: collapse; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.ctable th, .ctable td { padding: 3px 6px; border-bottom: 1px solid var(--grid); text-align: right; white-space: nowrap; }
+.ctable th { color: var(--muted); font-weight: 500; position: sticky; top: 0; background: var(--surface); }
+.ctable th:first-child, .ctable td:first-child { text-align: left; }
+.ctable td:first-child { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.ctable .lkey { display: inline-block; vertical-align: middle; margin-right: 6px; }
+
+.tooltip {
+  position: fixed; left: 0; top: 0; z-index: 50; pointer-events: none;
+  min-width: 150px; max-width: 380px; padding: 7px 9px;
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: 7px; box-shadow: var(--shadow);
+  font-size: 12px;
+}
+.tt-head { color: var(--ink-2); margin-bottom: 4px; font-variant-numeric: tabular-nums; }
+.tt-row { display: grid; grid-template-columns: 14px auto minmax(0, 1fr); column-gap: 8px; align-items: baseline; padding: 1px 0; }
+.tt-key { width: 14px; height: 3px; border-radius: 2px; background: var(--c); align-self: center; }
+.tt-val { font-weight: 650; color: var(--ink); font-variant-numeric: tabular-nums; }
+.tt-name { color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tt-row.out .tt-val { color: var(--ink-2); font-weight: 500; }
+.tt-sub { grid-column: 3; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+/* ---- figures ---- */
+.fig-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+.fig-tabs .chip { line-height: 22px; padding: 0 10px; font-size: 12px; }
+.fig-step { font-variant-numeric: tabular-nums; color: var(--ink); min-width: 9em; }
+.fig-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; padding: 12px 16px 24px; align-items: start; }
+.fig-grid.single { grid-template-columns: minmax(0, max-content); }   /* hug the figure, never upscale */
+.fig-panel { min-width: 0; padding: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+.fig-panel.focus { border-color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--ink-2); }
+.fig-head { display: flex; align-items: center; gap: 8px; margin: 0 2px 6px; font-size: 12px; min-width: 0; }
+.fig-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fig-at { margin-left: auto; color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fig-link { display: flex; justify-content: center; }
+.fig-link img { display: block; max-width: 100%; height: auto; border-radius: 4px; background: #fff; }
+.fig-msg { padding: 32px 8px; text-align: center; color: var(--muted); font-size: 12px; }
+
+/* ---- config ---- */
+.cfg-wrap { padding: 4px 16px 24px; }
+.cfg { border-collapse: separate; border-spacing: 0; font-size: 12px; width: 100%; table-layout: fixed; }
+.cfg col.kcol { width: clamp(150px, 24%, 260px); }
+.cfg th, .cfg td { padding: 4px 12px 4px 8px; border-bottom: 1px solid var(--grid); text-align: left; vertical-align: top; }
+.cfg thead th { position: sticky; top: var(--toolbar-h, 0px); z-index: 1; background: var(--page); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cfg thead .lkey { display: inline-block; vertical-align: middle; margin-right: 7px; }
+.cfg td.k { font-family: var(--mono); font-size: 11.5px; color: var(--ink); overflow-wrap: anywhere; }
+.cfg td.k .sec { color: var(--muted); }
+.cfg td.v { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); overflow-wrap: anywhere; }
+.cfg tr.diff td { background: var(--diff); }
+.cfg tr.diff td.v { color: var(--ink); }
+.cfg tr.diff td.k { box-shadow: inset 3px 0 0 var(--ink-2); }
+.cfg tr.sec th { padding-top: 14px; font-size: 11px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); border-bottom-color: var(--axis); }
+.cfg .missing { color: var(--muted); }
+
+.toast {
+  position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 60;
+  padding: 7px 14px; border-radius: 8px; background: var(--ink); color: var(--surface);
+  font-size: 12.5px; box-shadow: var(--shadow);
+}
+
+@media (max-width: 860px) {
+  .layout { grid-template-columns: minmax(0, 1fr); height: auto; }
+  .side { max-height: 42vh; border-right: 0; border-bottom: 1px solid var(--border); }
+  .main { overflow: visible; }
+  .top { gap: 10px; padding: 0 12px; }
+  .root-path { display: none; }
+  .controls .search { width: 100%; }
+  .group, .toolbar { padding-left: 12px; padding-right: 12px; }
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  .fig-grid { grid-template-columns: minmax(0, 1fr); padding: 12px; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">JEM<span>runs</span></div>
+  <nav class="tabs" role="tablist" aria-label="Views">
+    <button class="tab" type="button" role="tab" data-tab="charts">Charts</button>
+    <button class="tab" type="button" role="tab" data-tab="figures">Figures</button>
+    <button class="tab" type="button" role="tab" data-tab="config">Config</button>
+  </nav>
+  <div class="top-right">
+    <span id="conn" class="conn" role="status"><span class="dot"></span><span id="conn-text">connecting</span></span>
+    <span id="root-path" class="root-path"></span>
+    <button id="theme-btn" class="icon-btn" type="button" title="Theme: follow the system, light, or dark">Auto</button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="side" aria-label="Runs">
+    <div class="side-head">
+      <input id="run-filter" class="search" type="search" placeholder="Filter runs: name, state, config" aria-label="Filter runs" autocomplete="off">
+      <div class="side-meta">
+        <span id="run-count" class="grow"></span>
+        <button id="select-shown" class="link-btn" type="button" title="Select the runs shown (up to 8)">Select shown</button>
+        <button id="select-none" class="link-btn" type="button">Clear</button>
+      </div>
+    </div>
+    <ul id="run-list" class="runs"></ul>
+  </aside>
+
+  <main class="main" id="main">
+    <section id="view-charts" class="view">
+      <div class="toolbar">
+        <div class="controls">
+          <input id="metric-filter" class="search" type="search" placeholder="Filter metrics (regex)" aria-label="Filter metrics" autocomplete="off">
+          <label class="field" title="Exponential moving average for dense series; sparse series such as eval/* are drawn raw">
+            Smoothing <input id="smooth" type="range" min="0" max="0.99" step="0.01"> <output id="smooth-val"></output>
+          </label>
+          <div class="field">x axis
+            <div class="seg" role="group" aria-label="x axis">
+              <button type="button" data-x="step">Step</button><button type="button" data-x="time">Minutes</button>
+            </div>
+          </div>
+        </div>
+        <div id="legend" class="legend" aria-label="Selected runs"></div>
+      </div>
+      <div id="charts-empty" class="empty" hidden></div>
+      <div id="chart-groups"></div>
+    </section>
+
+    <section id="view-figures" class="view" hidden>
+      <div class="toolbar">
+        <div class="controls">
+          <label id="fig-focus-wrap" class="field">Run <select id="fig-focus"></select></label>
+          <div id="fig-tabs" class="fig-tabs" role="tablist" aria-label="Figure"></div>
+          <div class="field">
+            <input id="fig-slider" type="range" min="0" max="0" step="1" value="0" aria-label="Figure step">
+            <output id="fig-step" class="fig-step"></output>
+            <button id="fig-latest" class="chip" type="button" title="Follow the latest figure">latest</button>
+          </div>
+        </div>
+      </div>
+      <div id="fig-empty" class="empty" hidden></div>
+      <div id="fig-grid" class="fig-grid"></div>
+    </section>
+
+    <section id="view-config" class="view" hidden>
+      <div class="toolbar">
+        <div class="controls">
+          <input id="cfg-filter" class="search" type="search" placeholder="Filter keys" aria-label="Filter config keys" autocomplete="off">
+          <label class="field"><input id="cfg-diff" type="checkbox"> Differences only</label>
+          <span id="cfg-summary" class="field"></span>
+        </div>
+      </div>
+      <div id="cfg-empty" class="empty" hidden></div>
+      <div class="cfg-wrap"><table id="cfg-table" class="cfg"></table></div>
+    </section>
+  </main>
+</div>
+
+<div id="tooltip" class="tooltip" hidden></div>
+<div id="toast" class="toast" role="status" hidden></div>
+
+<script>
+(() => {
+'use strict';
+
+// ------------------------------------------------------------------ constants
+const SLOTS = 8;                  // categorical palette size, so at most 8 runs are compared
+const POLL_LIVE = 3000, POLL_IDLE = 10000, POLL_RETRY = 5000;
+const GROUPS = ['train', 'diag', 'eval', 'perf', 'other'];
+const SPARSE_FRAC = 0.2;          // keys in < 20% of a run's rows (eval/*) are points+lines, unsmoothed
+const DEFAULT_SMOOTH = 0.6;
+const SVGNS = 'http://www.w3.org/2000/svg';
+const FONT = '10.5px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+
+// ------------------------------------------------------------------ helpers
+const $ = (sel, el = document) => el.querySelector(sel);
+const enc = encodeURIComponent;
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+function h(tag, props, ...kids) {
+  const el = document.createElement(tag);
+  for (const k in props || {}) {
+    const v = props[k];
+    if (v == null || v === false) continue;
+    if (k === 'class') el.className = v;
+    else if (k === 'text') el.textContent = v;
+    else if (k === 'hidden') el.hidden = true;
+    else if (k === 'vars') for (const n in v) el.style.setProperty(n, v[n]);
+    else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2), v);
+    else el.setAttribute(k, v === true ? '' : String(v));
+  }
+  for (const kid of kids.flat(Infinity)) {
+    if (kid == null || kid === false || kid === '') continue;
+    el.append(kid instanceof Node ? kid : String(kid));   // text nodes: never parsed as HTML
+  }
+  return el;
+}
+
+const ls = {
+  get(key, dflt) { try { const v = localStorage.getItem(key); return v == null ? dflt : JSON.parse(v); } catch { return dflt; } },
+  set(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* private mode */ } },
+};
+
+const ICONS = {
+  running: '<circle cx="6" cy="6" r="3.2" fill="currentColor"/>',
+  finished: '<path d="M2.6 6.3 5 8.7l4.6-5.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
+  failed: '<path d="M3.2 3.2l5.6 5.6M8.8 3.2 3.2 8.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+  diverged: '<path d="M1 9.6h2.8L6 2l2.2 7.6H11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
+  unknown: '<circle cx="6" cy="6" r="3.3" fill="none" stroke="currentColor" stroke-width="1.5"/>',
+};
+function icon(kind) {
+  const svg = document.createElementNS(SVGNS, 'svg');
+  svg.setAttribute('viewBox', '0 0 12 12');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.innerHTML = ICONS[kind] || ICONS.unknown;   // constant markup only
+  return svg;
+}
+const KNOWN_STATES = ['running', 'finished', 'failed', 'diverged'];
+function badge(state) {
+  const cls = KNOWN_STATES.includes(state) ? state : 'unknown';
+  return h('span', { class: 'badge ' + cls }, icon(cls), state || 'unknown');
+}
+
+function fmtNum(v, p = 5) {
+  if (v === null || v === undefined) return '—';
+  if (typeof v !== 'number') return String(v);
+  if (!Number.isFinite(v)) return String(v);
+  if (v === 0) return '0';
+  const a = Math.abs(v);
+  if (a >= 1e6 || a < 1e-4) return v.toExponential(p - 1).replace(/\.?0+e/, 'e').replace('e+', 'e');
+  return String(+v.toPrecision(p));
+}
+const fmtInt = v => (v == null ? '—' : Math.round(v).toLocaleString('en-US'));
+function fmtCompact(v) {
+  const a = Math.abs(v);
+  if (a >= 1e9) return +(v / 1e9).toFixed(1) + 'G';
+  if (a >= 1e6) return +(v / 1e6).toFixed(1) + 'M';
+  if (a >= 1e4) return +(v / 1e3).toFixed(1) + 'k';
+  return String(Math.round(v));
+}
+function fmtAge(sec) {
+  if (sec == null || !Number.isFinite(sec)) return '';
+  sec = Math.max(0, sec);
+  if (sec < 60) return Math.floor(sec) + 's';
+  if (sec < 3600) return Math.floor(sec / 60) + 'm';
+  if (sec < 86400) return Math.floor(sec / 3600) + 'h';
+  return Math.floor(sec / 86400) + 'd';
+}
+function fmtDate(t) {
+  if (typeof t !== 'number') return t == null ? undefined : String(t);
+  return new Date(t * 1000).toLocaleString(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  });
+}
+let skew = 0;                                        // server clock minus browser clock (ms)
+const nowSec = () => (Date.now() + skew) / 1000;
+
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.hidden = false;
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => { t.hidden = true; }, 2800);
+}
+
+// ------------------------------------------------------------------ state
+const S = {
+  runs: [], byId: new Map(), root: '',
+  selected: [], focus: null, hl: null,
+  tab: 'charts', smooth: DEFAULT_SMOOTH, x: 'step', q: '', rq: '',
+  logy: new Set(), collapsed: new Set(), tables: new Set(),
+  fig: null, figStep: null, diffOnly: false, cq: '',
+  theme: ls.get('jem.theme', 'auto'), offline: false, loaded: false,
+};
+let slotOf = ls.get('jem.slots', {});               // run id -> palette slot (sticky per viewer)
+if (typeof slotOf !== 'object' || slotOf === null) slotOf = {};
+
+function assignSlot(id, holders) {
+  const used = new Set(holders.filter(x => x !== id).map(x => slotOf[x]));
+  let s = slotOf[id];
+  if (!(Number.isInteger(s) && s >= 0 && s < SLOTS) || used.has(s)) {
+    s = 0;
+    while (used.has(s)) s++;
+    slotOf[id] = s;
+    const known = S.byId.size ? Object.keys(slotOf).filter(k => S.byId.has(k)) : Object.keys(slotOf);
+    slotOf = Object.fromEntries(known.slice(-500).map(k => [k, slotOf[k]]));
+    ls.set('jem.slots', slotOf);
+  }
+  return s;
+}
+const slotVar = id => `var(--series-${(slotOf[id] ?? 0) + 1})`;
+const currentFocus = () => (S.selected.includes(S.focus) ? S.focus : (S.selected[0] ?? null));
+const anyLive = () => S.selected.some(id => S.byId.get(id)?.state === 'running');
+
+// ------------------------------------------------------------------ colors (canvas reads the CSS tokens)
+let C = {}, themeVersion = 0;
+function readColors() {
+  const cs = getComputedStyle(document.documentElement);
+  const g = n => cs.getPropertyValue(n).trim();
+  C = {
+    surface: g('--surface'), ink: g('--ink'), ink2: g('--ink-2'), muted: g('--muted'),
+    grid: g('--grid'), axis: g('--axis'),
+    series: Array.from({ length: SLOTS }, (_, i) => g(`--series-${i + 1}`)),
+  };
+  themeVersion++;
+}
+function applyTheme() {
+  if (S.theme === 'light' || S.theme === 'dark') document.documentElement.dataset.theme = S.theme;
+  else delete document.documentElement.dataset.theme;
+  $('#theme-btn').textContent = { auto: 'Auto', light: 'Light', dark: 'Dark' }[S.theme] || 'Auto';
+  readColors();
+}
+
+// ------------------------------------------------------------------ URL state (hash or query)
+function readParams() {
+  const p = new URLSearchParams(location.search);
+  for (const [k, v] of new URLSearchParams(location.hash.replace(/^#/, ''))) p.set(k, v);
+  return p;
+}
+const splitList = s => (s ? s.split(',').map(x => x.trim()).filter(Boolean) : []);
+function applyParams(p) {
+  if (p.has('runs')) {
+    const want = splitList(p.get('runs')).filter(id => S.byId.has(id));
+    S.selected = [];
+    for (const id of want) {
+      if (S.selected.length >= SLOTS || S.selected.includes(id)) continue;
+      assignSlot(id, S.selected);
+      S.selected.push(id);
+    }
+  }
+  const tab = p.get('tab');
+  S.tab = ['charts', 'figures', 'config'].includes(tab) ? tab : 'charts';
+  S.focus = p.get('focus') || null;
+  const sm = parseFloat(p.get('smooth'));
+  S.smooth = Number.isFinite(sm) ? clamp(sm, 0, 0.99) : DEFAULT_SMOOTH;
+  S.x = p.get('x') === 'time' ? 'time' : 'step';
+  S.q = p.get('q') || '';
+  S.rq = p.get('rq') || '';
+  S.cq = p.get('cq') || '';
+  S.logy = new Set(splitList(p.get('log')));
+  S.collapsed = new Set(splitList(p.get('collapsed')));
+  S.fig = p.get('fig') || null;
+  const st = parseInt(p.get('step'), 10);
+  S.figStep = Number.isFinite(st) ? st : null;
+  S.diffOnly = p.get('diff') === '1';
+  if (['auto', 'light', 'dark'].includes(p.get('theme'))) S.theme = p.get('theme');
+  syncControls();
+}
+let lastHash = '';
+function writeUrl() {
+  const p = new URLSearchParams();
+  if (S.selected.length) p.set('runs', S.selected.join(','));
+  if (S.tab !== 'charts') p.set('tab', S.tab);
+  const focus = currentFocus();
+  if (focus && focus !== S.selected[0]) p.set('focus', focus);
+  if (S.smooth !== DEFAULT_SMOOTH) p.set('smooth', String(S.smooth));
+  if (S.x !== 'step') p.set('x', S.x);
+  if (S.q) p.set('q', S.q);
+  if (S.rq) p.set('rq', S.rq);
+  if (S.cq) p.set('cq', S.cq);
+  if (S.logy.size) p.set('log', [...S.logy].join(','));
+  if (S.collapsed.size) p.set('collapsed', [...S.collapsed].join(','));
+  if (S.fig) p.set('fig', S.fig);
+  if (S.figStep != null) p.set('step', String(S.figStep));
+  if (S.diffOnly) p.set('diff', '1');
+  if (S.theme !== 'auto') p.set('theme', S.theme);
+  const hash = p.toString().replace(/%2C/gi, ',').replace(/%2F/gi, '/').replace(/%40/gi, '@');
+  lastHash = hash;
+  if (location.hash.replace(/^#/, '') !== hash) {
+    history.replaceState(null, '', hash ? '#' + hash : location.pathname + location.search);
+  }
+}
+window.addEventListener('hashchange', () => {
+  if (location.hash.replace(/^#/, '') === lastHash) return;
+  const p = readParams();
+  applyParams(p);
+  applyTheme();
+  setTab(S.tab, true);
+  selectionChanged();
+});
+
+// ------------------------------------------------------------------ data
+async function api(path) {
+  const res = await fetch(path, { cache: 'no-store' });
+  const date = Date.parse(res.headers.get('Date') || '');
+  if (Number.isFinite(date)) {
+    const s = date - Date.now();
+    if (Math.abs(s - skew) > 1500) skew = s;   // the Date header has 1 s resolution
+  }
+  if (!res.ok) {
+    const err = new Error(`${res.status} ${path}`);
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
+}
+
+class RunData {
+  constructor(id) {
+    this.id = id;
+    this.version = 0;
+    this.config = null;
+    this.figures = null;
+    this.loading = null;
+    this.reset();
+  }
+  reset() {
+    this.offset = 0;
+    this.rows = 0;
+    this.series = new Map();   // key -> {x: steps, t: times, y: values (null = non-finite), mono}
+    this.keys = [];            // first-appearance order
+    this.firstTime = null;
+    this.loaded = false;
+    this.version++;
+  }
+  ingest(rows) {
+    for (const r of rows) {
+      const step = r.step;
+      const t = typeof r.time === 'number' ? r.time : NaN;
+      if (this.firstTime === null && Number.isFinite(t)) this.firstTime = t;
+      this.rows++;
+      for (const k in r) {
+        if (k === 'step' || k === 'time') continue;
+        const v = r[k];
+        if (v !== null && typeof v !== 'number') continue;
+        let s = this.series.get(k);
+        if (!s) {
+          s = { x: [], t: [], y: [], mono: true };
+          this.series.set(k, s);
+          this.keys.push(k);
+        }
+        const n = s.x.length;
+        if (n && step < s.x[n - 1]) s.mono = false;
+        s.x.push(step);
+        s.t.push(t);
+        s.y.push(v);
+      }
+    }
+    if (rows.length) this.version++;
+  }
+}
+const runData = new Map();
+function rd(id) {
+  let d = runData.get(id);
+  if (!d) runData.set(id, (d = new RunData(id)));
+  return d;
+}
+
+function fetchMetrics(id) {
+  const d = rd(id);
+  if (d.loading) return d.loading;
+  d.loading = (async () => {
+    for (let page = 0; page < 10000; page++) {
+      const res = await api(`/api/runs/${enc(id)}/metrics?offset=${d.offset}`);
+      if (res.reset) d.reset();
+      d.ingest(res.rows);
+      d.offset = res.offset;
+      if (!res.more) break;
+    }
+    d.loaded = true;
+  })()
+    .catch(err => { if (err.status === 404) d.loaded = true; else throw err; })
+    .finally(() => { d.loading = null; });
+  return d.loading;
+}
+async function fetchFigures(id) {
+  const d = rd(id);
+  try { d.figures = await api(`/api/runs/${enc(id)}/figures`); }
+  catch (err) { if (err.status === 404) d.figures = {}; else throw err; }
+}
+async function fetchConfig(id) {
+  const d = rd(id);
+  if (d.config && !d.config.error) return;
+  try { d.config = await api(`/api/runs/${enc(id)}/config`); }
+  catch (err) { if (err.status === 404) d.config = { config: {}, meta: {}, error: 'run not found' }; else throw err; }
+}
+async function refreshRuns() {
+  const runs = await api('/api/runs');
+  S.runs = Array.isArray(runs) ? runs : [];
+  S.byId = new Map(S.runs.map(r => [r.id, r]));
+  const kept = S.selected.filter(id => S.byId.has(id));
+  if (kept.length !== S.selected.length) {
+    S.selected = kept;
+    writeUrl();
+  }
+  S.offline = false;
+}
+
+// ------------------------------------------------------------------ polling
+let pollTimer = null;
+function schedulePoll(ms) {
+  clearTimeout(pollTimer);
+  pollTimer = setTimeout(poll, ms);
+}
+async function poll() {
+  clearTimeout(pollTimer);
+  if (document.hidden) { schedulePoll(POLL_IDLE); return; }
+  let ok = true;
+  try {
+    const before = new Map(S.runs.map(r => [r.id, r.state]));
+    await refreshRuns();
+    const jobs = [];
+    for (const id of S.selected) {
+      const d = rd(id);
+      const live = S.byId.get(id)?.state === 'running' || before.get(id) === 'running';
+      if (live || !d.loaded) jobs.push(fetchMetrics(id));
+      if (S.tab === 'figures' && (live || !d.figures)) jobs.push(fetchFigures(id));
+      if (S.tab === 'config' && (!d.config || d.config.error)) jobs.push(fetchConfig(id));
+    }
+    await Promise.all(jobs);
+  } catch (err) {
+    ok = false;
+    console.warn('poll failed', err);
+  }
+  S.offline = !ok;
+  render();
+  schedulePoll(!ok ? POLL_RETRY : anyLive() ? POLL_LIVE : POLL_IDLE);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) schedulePoll(50); });
+
+// ------------------------------------------------------------------ selection
+function toggleRun(id, on) {
+  const i = S.selected.indexOf(id);
+  if (on && i < 0) {
+    if (S.selected.length >= SLOTS) {
+      toast(`Compare up to ${SLOTS} runs at a time (one color each). Deselect one first.`);
+      renderRunList();
+      return;
+    }
+    assignSlot(id, S.selected);
+    S.selected.push(id);
+  } else if (!on && i >= 0) {
+    S.selected.splice(i, 1);
+  }
+  selectionChanged();
+}
+function selectionChanged() {
+  if (!S.selected.includes(S.hl)) S.hl = null;
+  writeUrl();
+  render();
+  const jobs = [];
+  for (const id of S.selected) {
+    const d = rd(id);
+    if (!d.loaded && !d.loading) jobs.push(fetchMetrics(id));
+  }
+  if (jobs.length) Promise.all(jobs).then(render, err => { console.warn(err); S.offline = true; renderConn(); });
+}
+function setHighlight(id) {
+  const v = id && S.selected.length > 1 && S.selected.includes(id) ? id : null;
+  if (v === S.hl) return;
+  S.hl = v;
+  if (S.tab === 'charts') refreshCharts();
+}
+
+// ------------------------------------------------------------------ top bar + run list
+function renderConn() {
+  const el = $('#conn'), txt = $('#conn-text');
+  el.classList.toggle('off', S.offline);
+  el.classList.toggle('live', !S.offline && anyLive());
+  txt.textContent = S.offline ? 'disconnected, retrying' : anyLive() ? 'live' : 'idle';
+  el.title = S.offline ? 'The dashboard server is not responding' :
+    anyLive() ? `Polling every ${POLL_LIVE / 1000} s while a selected run is running` : `Checking for new runs every ${POLL_IDLE / 1000} s`;
+}
+
+function headline(r) {
+  const hl = r.headline || {};
+  const parts = [];
+  if (hl['model.kind'] != null) parts.push(String(hl['model.kind']));
+  if (hl['model.option_dim'] != null) parts.push('d=' + hl['model.option_dim']);
+  if (hl['objective.name'] != null) parts.push(String(hl['objective.name']));
+  if (r.preset && r.preset !== r.name) parts.push(String(r.preset));
+  return parts.join(' · ');
+}
+function runTitle(r) {
+  const lines = [r.id];
+  if (r.message) lines.push(r.message);
+  if (r.created) lines.push('created ' + fmtDate(r.created));
+  if (r.commit) lines.push('git ' + r.commit + (r.git && r.git.dirty ? ' (dirty)' : ''));
+  const ev = Object.entries(r.eval || {});
+  if (ev.length) {
+    lines.push('', `eval @ step ${fmtInt(r.eval_step)}`);
+    for (const [k, v] of ev) lines.push(`  ${k}  ${fmtNum(v, 4)}`);
+  }
+  return lines.join('\n');
+}
+function runMatcher(q) {
+  const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return () => true;
+  return r => {
+    const hay = [r.name, r.id, r.state, r.preset, r.commit, ...Object.values(r.headline || {})]
+      .filter(v => v != null).join(' ').toLowerCase();
+    return terms.every(t => hay.includes(t));
+  };
+}
+
+const rowEls = new Map();
+let listSig = '';
+function runRow(r) {
+  const cb = h('input', { type: 'checkbox' });
+  cb.addEventListener('change', () => toggleRun(r.id, cb.checked));
+  const e = {
+    cb,
+    name: h('div', { class: 'run-name' }),
+    badge: badge(r.state),
+    state: r.state,
+    step: h('span', { class: 'run-step' }),
+    age: h('span', { class: 'run-age' }),
+    cfg: h('div', { class: 'run-cfg' }),
+  };
+  const li = h('li', { class: 'run' },
+    h('label', null, cb, h('span', { class: 'swatch' }),
+      h('div', { class: 'run-body' }, e.name, h('div', { class: 'run-meta' }, e.badge, e.step, e.age), e.cfg)));
+  li.addEventListener('mouseenter', () => setHighlight(r.id));
+  li.addEventListener('mouseleave', () => setHighlight(null));
+  li._e = e;
+  return li;
+}
+function renderRunList() {
+  const ul = $('#run-list');
+  const match = runMatcher(S.rq);
+  const shown = S.runs.filter(match);
+  for (const r of shown) {
+    let li = rowEls.get(r.id);
+    if (!li) rowEls.set(r.id, (li = runRow(r)));
+    const e = li._e;
+    const sel = S.selected.includes(r.id);
+    li.classList.toggle('sel', sel);
+    if (sel) li.style.setProperty('--c', slotVar(r.id)); else li.style.removeProperty('--c');
+    e.cb.checked = sel;
+    e.cb.setAttribute('aria-label', 'Compare ' + r.name);
+    e.name.textContent = r.name;
+    if (e.state !== r.state) {
+      const b = badge(r.state);
+      e.badge.replaceWith(b);
+      e.badge = b;
+      e.state = r.state;
+    }
+    e.step.textContent = r.step == null ? '' : 'step ' + fmtCompact(r.step);
+    e.age.textContent = r.updated ? fmtAge(nowSec() - r.updated) + ' ago' : '';
+    e.cfg.textContent = headline(r);
+    li.title = runTitle(r);
+  }
+  for (const id of rowEls.keys()) if (!S.byId.has(id)) rowEls.delete(id);
+  const sig = shown.map(r => r.id).join(',') + '|' + (S.runs.length ? '' : 'empty');
+  if (sig !== listSig) {
+    listSig = sig;
+    if (!S.runs.length) {
+      ul.replaceChildren(h('li', { class: 'side-empty', text: S.loaded ? 'No runs yet. Runs written under the root appear here automatically.' : 'Loading runs…' }));
+    } else if (!shown.length) {
+      ul.replaceChildren(h('li', { class: 'side-empty', text: 'No runs match the filter.' }));
+    } else {
+      ul.replaceChildren(...shown.map(r => rowEls.get(r.id)));
+    }
+  }
+  const n = S.runs.length;
+  $('#run-count').textContent = `${shown.length === n ? n : shown.length + ' of ' + n} run${n === 1 ? '' : 's'}` +
+    (S.selected.length ? ` · ${S.selected.length} selected` : '');
+}
+
+let legendSig = '';
+function renderLegend() {
+  const el = $('#legend');
+  const sig = S.selected.map(id => id + ':' + slotOf[id] + ':' + (S.byId.get(id)?.name || '')).join(',');
+  if (sig === legendSig) return;
+  legendSig = sig;
+  el.replaceChildren(...S.selected.map(id => {
+    const item = h('span', { class: 'legend-item', title: id, vars: { '--c': slotVar(id) } },
+      h('span', { class: 'lkey' }), h('span', { text: S.byId.get(id)?.name || id }));
+    item.addEventListener('mouseenter', () => setHighlight(id));
+    item.addEventListener('mouseleave', () => setHighlight(null));
+    return item;
+  }));
+  el.hidden = !S.selected.length;
+}
+
+// ------------------------------------------------------------------ chart math
+function linTicks(lo, hi, target) {
+  const span = hi - lo;
+  if (!(span > 0)) return { ticks: [lo], step: 1 };
+  const raw = span / Math.max(1, target);
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const r = raw / mag;
+  const step = (r < 1.5 ? 1 : r < 3 ? 2 : r < 7 ? 5 : 10) * mag;
+  const ticks = [];
+  for (let i = Math.ceil(lo / step - 1e-9); i * step <= hi + step * 1e-9; i++) ticks.push(i * step);
+  return { ticks, step };
+}
+function logTicks(lo, hi) {           // lo, hi in log10 units; returns values
+  const ticks = [];
+  const a = Math.floor(lo), b = Math.ceil(hi);
+  if (b - a <= 2) {
+    for (let e = a; e <= b; e++) for (const m of [1, 2, 5]) {
+      const v = m * Math.pow(10, e), lv = Math.log10(v);
+      if (lv >= lo - 1e-9 && lv <= hi + 1e-9) ticks.push(v);
+    }
+  } else {
+    const every = Math.ceil((b - a) / 5);
+    for (let e = Math.ceil(lo); e <= Math.floor(hi); e += every) ticks.push(Math.pow(10, e));
+  }
+  if (ticks.length < 2) return linTicks(Math.pow(10, lo), Math.pow(10, hi), 4).ticks.filter(v => v > 0);
+  return ticks;
+}
+function fmtLogTick(v) {
+  if (v >= 1e5 || v < 1e-3) return v.toExponential(0).replace('e+', 'e');
+  return String(+v.toPrecision(3));
+}
+function tickFormatter(ticks, step) {
+  const maxAbs = Math.max(0, ...ticks.map(Math.abs));
+  const zero = v => Math.abs(v) < step * 1e-6;
+  if (maxAbs > 0 && (maxAbs < 1e-3 || maxAbs >= 1e12)) {
+    return v => (zero(v) ? '0' : v.toExponential(1).replace('e+', 'e').replace('.0e', 'e'));
+  }
+  let div = 1, unit = '';
+  if (maxAbs >= 1e9) { div = 1e9; unit = 'G'; } else if (maxAbs >= 1e6) { div = 1e6; unit = 'M'; } else if (maxAbs >= 1e4) { div = 1e3; unit = 'k'; }
+  const dec = clamp(Math.ceil(-Math.log10(step / div) - 1e-9), 0, 6);
+  return v => (zero(v) ? '0' : (v / div).toFixed(dec) + unit);
+}
+function nearest(xs, v, mono) {
+  const n = xs.length;
+  if (!n) return -1;
+  if (!mono) {
+    let bi = -1, bd = Infinity;
+    for (let i = 0; i < n; i++) { const d = Math.abs(xs[i] - v); if (d < bd) { bd = d; bi = i; } }
+    return bi;
+  }
+  let lo = 0, hi = n - 1;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (xs[mid] < v) lo = mid + 1; else hi = mid; }
+  if (lo > 0 && Math.abs(xs[lo - 1] - v) <= Math.abs(xs[lo] - v)) return lo - 1;
+  return lo;
+}
+function nearestIdx(list, v) { return list.length ? nearest(list, v, true) : -1; }
+function covers(s, x) {             // is x within the series' range (plus one typical spacing)?
+  const a = s.xs[0], b = s.xs[s.n - 1];
+  const gap = s.n > 1 ? Math.abs(b - a) / (s.n - 1) : 0;
+  return x >= Math.min(a, b) - gap && x <= Math.max(a, b) + gap;
+}
+function ema(raw, w) {               // TensorBoard-style debiased EMA; NaN stays a gap
+  const out = new Float64Array(raw.length);
+  let last = 0, k = 0;
+  for (let i = 0; i < raw.length; i++) {
+    const v = raw[i];
+    if (!Number.isFinite(v)) { out[i] = NaN; continue; }
+    last = last * w + (1 - w) * v;
+    k++;
+    out[i] = last / (1 - Math.pow(w, k));
+  }
+  return out;
+}
+// Many points per pixel column: raw data keeps each column's envelope (first/min/max/last) so
+// spikes survive; a smoothed line keeps the column mean, so its residual jitter is not drawn
+// as a thick band.
+function decimate(px, py, mean) {
+  const ox = [], oy = [];
+  const n = px.length;
+  let i = 0;
+  while (i < n) {
+    if (!Number.isFinite(px[i]) || !Number.isFinite(py[i])) { ox.push(NaN); oy.push(NaN); i++; continue; }
+    const col = Math.floor(px[i]);
+    let j = i, mn = i, mx = i, sx = px[i], sy = py[i];
+    while (j + 1 < n && Number.isFinite(px[j + 1]) && Number.isFinite(py[j + 1]) && Math.floor(px[j + 1]) === col) {
+      j++;
+      sx += px[j];
+      sy += py[j];
+      if (py[j] < py[mn]) mn = j;
+      if (py[j] > py[mx]) mx = j;
+    }
+    if (mean) {
+      ox.push(sx / (j - i + 1));
+      oy.push(sy / (j - i + 1));
+    } else {
+      let prev = -1;
+      for (const k of [i, Math.min(mn, mx), Math.max(mn, mx), j]) if (k !== prev) { ox.push(px[k]); oy.push(py[k]); prev = k; }
+    }
+    i = j + 1;
+  }
+  return [ox, oy];
+}
+function strokeSeries(ctx, px, py, plotW, mean) {
+  if (px.length > plotW * 3) [px, py] = decimate(px, py, mean);
+  const singles = [];
+  let pen = false, seg = 0, lx = 0, ly = 0;
+  ctx.beginPath();
+  for (let i = 0; i < px.length; i++) {
+    const x = px[i], y = py[i];
+    if (!Number.isFinite(x) || !Number.isFinite(y) || (pen && x < lx - 1)) {   // gap, or the step went backwards
+      if (pen && seg === 1) singles.push(lx, ly);
+      pen = false;
+      seg = 0;
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    }
+    if (pen) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+    pen = true;
+    seg++;
+    lx = x;
+    ly = y;
+  }
+  if (pen && seg === 1) singles.push(lx, ly);
+  ctx.stroke();
+  for (let i = 0; i < singles.length; i += 2) {   // isolated finite points must not vanish
+    ctx.beginPath();
+    ctx.arc(singles[i], singles[i + 1], Math.max(1.5, ctx.lineWidth), 0, 2 * Math.PI);
+    ctx.fill();
+  }
+}
+function dot(ctx, x, y, r, color) {   // marker with a 2px surface ring
+  ctx.fillStyle = C.surface;
+  ctx.beginPath(); ctx.arc(x, y, r + 2, 0, 2 * Math.PI); ctx.fill();
+  ctx.fillStyle = color;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, 2 * Math.PI); ctx.fill();
+}
+
+// ------------------------------------------------------------------ charts
+const charts = new Map();          // metric key -> Chart
+const groupEls = new Map();        // group -> {el, count, grid}
+let layoutSig = null;
+let hover = null, overlayPending = false, drawPending = false;
+const tip = $('#tooltip');
+
+const io = new IntersectionObserver(entries => {
+  for (const e of entries) {
+    const c = e.target._chart;
+    if (!c) continue;
+    c.visible = e.isIntersecting;
+    if (c.visible) { if (c.dirty) scheduleDraw(); else c.drawOverlay(hover); }
+  }
+}, { root: $('#main'), rootMargin: '400px 0px' });
+const ro = new ResizeObserver(entries => {
+  for (const e of entries) if (e.target._chart) e.target._chart.dirty = true;
+  scheduleDraw();
+});
+
+function scheduleDraw() {
+  if (drawPending) return;
+  drawPending = true;
+  requestAnimationFrame(() => {
+    drawPending = false;
+    for (const c of charts.values()) if (c.dirty && c.visible && !S.tables.has(c.key)) c.draw();
+  });
+}
+function setHover(hv) {
+  hover = hv;
+  if (overlayPending) return;
+  overlayPending = true;
+  requestAnimationFrame(() => {
+    overlayPending = false;
+    for (const c of charts.values()) if (c.visible) c.drawOverlay(hover);
+    showTip(hover);
+  });
+}
+function groupOf(key) {
+  const i = key.indexOf('/');
+  const g = i > 0 ? key.slice(0, i) : '';
+  return GROUPS.includes(g) ? g : 'other';
+}
+function metricMatcher(q) {
+  q = q.trim();
+  if (!q) return () => true;
+  let re = null;
+  try { re = new RegExp(q, 'i'); } catch { re = null; }
+  const lower = q.toLowerCase();
+  return k => (re ? re.test(k) : k.toLowerCase().includes(lower));
+}
+function chartSig(key) {
+  return S.selected.map(id => `${id}:${runData.get(id)?.version ?? 0}:${slotOf[id]}`).join(',') +
+    `|${S.smooth}|${S.x}|${S.logy.has(key)}|${S.hl}|${themeVersion}|${S.selected.length}`;
+}
+function refreshCharts() {
+  for (const c of charts.values()) {
+    const sig = chartSig(c.key);
+    if (sig === c.sig) continue;
+    c.sig = sig;
+    c.dirty = true;
+    if (S.tables.has(c.key)) c.renderTable();
+  }
+  scheduleDraw();
+}
+
+class Chart {
+  constructor(key) {
+    this.key = key;
+    const i = key.indexOf('/');
+    const prefix = i > 0 ? key.slice(0, i + 1) : '';
+    const name = i > 0 ? key.slice(i + 1) : key;
+    this.logBtn = h('button', { type: 'button', class: 'chip', title: 'Logarithmic y axis', 'aria-pressed': 'false' }, 'log');
+    this.tblBtn = h('button', { type: 'button', class: 'chip', title: 'Show the values as a table', 'aria-pressed': 'false' }, 'table');
+    this.logBtn.addEventListener('click', () => {
+      if (S.logy.has(key)) S.logy.delete(key); else S.logy.add(key);
+      writeUrl();
+      this.syncTools();
+      refreshCharts();
+    });
+    this.tblBtn.addEventListener('click', () => {
+      if (S.tables.has(key)) S.tables.delete(key); else S.tables.add(key);
+      this.syncTools();
+    });
+    this.base = h('canvas', { class: 'base', 'aria-hidden': 'true' });
+    this.over = h('canvas', { class: 'over', tabindex: '0', role: 'img', 'aria-label': `${key}: use the arrow keys to read values` });
+    this.plot = h('div', { class: 'plot' }, this.base, this.over);
+    this.tbl = h('div', { class: 'ctable', hidden: true });
+    this.note = h('span', { class: 'note' });
+    this.el = h('figure', { class: 'card' },
+      h('figcaption', { class: 'card-head' },
+        h('span', { class: 'title', title: key }, prefix ? h('span', { class: 'prefix', text: prefix }) : null, h('span', { text: name })),
+        this.note,
+        h('span', { class: 'tools' }, this.logBtn, this.tblBtn)),
+      this.plot, this.tbl);
+    this.plot._chart = this;
+    this.dirty = true;
+    this.visible = false;
+    this.geom = null;
+    this.sig = '';
+    this.kIdx = null;
+    this.over.addEventListener('pointermove', e => this.onPointer(e));
+    this.over.addEventListener('pointerleave', () => setHover(null));
+    this.over.addEventListener('focus', () => { if (this.over.matches(':focus-visible')) this.onKey(null); });
+    this.over.addEventListener('blur', () => setHover(null));
+    this.over.addEventListener('keydown', e => this.onKey(e));
+    io.observe(this.plot);
+    ro.observe(this.plot);
+    this.syncTools();
+  }
+  destroy() {
+    io.unobserve(this.plot);
+    ro.unobserve(this.plot);
+    if (hover && hover.chart === this) setHover(null);
+  }
+  syncTools() {
+    const tbl = S.tables.has(this.key);
+    this.logBtn.setAttribute('aria-pressed', String(S.logy.has(this.key)));
+    this.tblBtn.setAttribute('aria-pressed', String(tbl));
+    this.plot.hidden = tbl;
+    this.tbl.hidden = !tbl;
+    if (tbl) this.renderTable();
+    this.dirty = true;
+    scheduleDraw();
+  }
+
+  collect(log) {
+    const out = [];
+    for (const id of S.selected) {
+      const d = runData.get(id);
+      const s = d && d.series.get(this.key);
+      if (!s || !s.x.length) continue;
+      const run = S.byId.get(id);
+      const n = s.x.length;
+      const t0 = (run && run.created) || d.firstTime || 0;
+      const xs = new Float64Array(n), raw = new Float64Array(n);
+      let nonpos = 0, nonfinite = 0;
+      for (let i = 0; i < n; i++) {
+        xs[i] = S.x === 'time' ? (s.t[i] - t0) / 60 : s.x[i];
+        const v = s.y[i];
+        if (v === null) { raw[i] = NaN; nonfinite++; }
+        else if (log && v <= 0) { raw[i] = NaN; nonpos++; }
+        else raw[i] = v;
+      }
+      const sparse = d.rows >= 8 && n / d.rows < SPARSE_FRAC;
+      const smoothed = !sparse && S.smooth > 0 && n > 2 ? ema(raw, S.smooth) : null;
+      out.push({
+        id, name: (run && run.name) || id, color: C.series[slotOf[id] ?? 0] || C.ink2,
+        xs, raw, disp: smoothed || raw, smoothed: !!smoothed, sparse, orig: s.y, step: s.x,
+        mono: s.mono || S.x === 'time', n, nonpos, nonfinite,
+      });
+    }
+    return out;
+  }
+
+  draw() {
+    this.dirty = false;
+    const W = this.plot.clientWidth, H = this.plot.clientHeight;
+    if (W < 20 || H < 20) return;
+    const dpr = window.devicePixelRatio || 1;
+    for (const cv of [this.base, this.over]) {
+      const w = Math.round(W * dpr), hh = Math.round(H * dpr);
+      if (cv.width !== w || cv.height !== hh) { cv.width = w; cv.height = hh; }
+    }
+    const ctx = this.base.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    ctx.font = FONT;
+    const log = S.logy.has(this.key);
+    const series = this.collect(log);
+
+    let xmin = Infinity, xmax = -Infinity, ymin = Infinity, ymax = -Infinity;
+    let nonpos = 0, nonfinite = 0;
+    for (const s of series) {
+      nonpos += s.nonpos;
+      nonfinite += s.nonfinite;
+      for (let i = 0; i < s.n; i++) {
+        const x = s.xs[i];
+        if (!Number.isFinite(x)) continue;
+        if (x < xmin) xmin = x;
+        if (x > xmax) xmax = x;
+        const y = s.raw[i];        // smoothed values stay inside the raw range
+        if (!Number.isFinite(y)) continue;
+        if (y < ymin) ymin = y;
+        if (y > ymax) ymax = y;
+      }
+    }
+    this.renderNote(series, nonfinite, nonpos);
+    if (!series.length || !Number.isFinite(ymin)) {
+      this.geom = null;
+      ctx.fillStyle = C.muted;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(!series.length ? 'no data for the selected runs' : log && nonpos ? 'no positive values' : 'no finite values', W / 2, H / 2);
+      this.drawOverlay(hover);
+      return;
+    }
+    xmin = Math.min(0, xmin);   // step 0 / run start, so every chart's x axis lines up
+    if (xmin === xmax) { xmin -= 1; xmax += 1; }
+    let lo = log ? Math.log10(ymin) : ymin, hi = log ? Math.log10(ymax) : ymax;
+    if (hi - lo < 1e-12 * Math.max(1, Math.abs(hi))) {
+      const pad = log ? 0.5 : Math.abs(lo) * 0.05 || 1;
+      lo -= pad;
+      hi += pad;
+    } else {
+      const pad = (hi - lo) * 0.06;
+      lo -= pad;
+      hi += pad;
+    }
+
+    const mt = 8, mr = 12, mb = 20;
+    let yt, ylab;
+    if (log) {
+      yt = logTicks(lo, hi);
+      ylab = yt.map(fmtLogTick);
+    } else {
+      const t = linTicks(lo, hi, Math.max(2, Math.round((H - mt - mb) / 36)));
+      yt = t.ticks;
+      const f = tickFormatter(yt, t.step);
+      ylab = yt.map(f);
+    }
+    let ml = 0;
+    for (const s of ylab) ml = Math.max(ml, ctx.measureText(s).width);
+    ml = Math.ceil(Math.max(18, ml)) + 10;
+    const pw = W - ml - mr, ph = H - mt - mb;
+    for (const s of series) {         // few enough points to draw each one: draw them, raw
+      s.markers = s.n <= Math.max(2, pw / 10);
+      if (s.markers && s.smoothed) { s.smoothed = false; s.disp = s.raw; }
+    }
+    const X = x => ml + ((x - xmin) / (xmax - xmin)) * pw;
+    const Y = v => mt + (1 - ((log ? Math.log10(v) : v) - lo) / (hi - lo)) * ph;
+
+    // grid + y labels
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = C.grid;
+    ctx.fillStyle = C.muted;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    yt.forEach((v, i) => {
+      const y = Math.round(Y(v)) + 0.5;
+      if (y < mt - 0.5 || y > mt + ph + 0.5) return;
+      ctx.beginPath(); ctx.moveTo(ml, y); ctx.lineTo(ml + pw, y); ctx.stroke();
+      ctx.fillText(ylab[i], ml - 6, y);
+    });
+    // x axis
+    const xb = mt + ph + 0.5;
+    ctx.strokeStyle = C.axis;
+    ctx.beginPath(); ctx.moveTo(ml, xb); ctx.lineTo(ml + pw, xb); ctx.stroke();
+    const xt = linTicks(xmin, xmax, Math.max(2, Math.floor(pw / 56)));
+    const xf = tickFormatter(xt.ticks, xt.step);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    for (const v of xt.ticks) {
+      const x = Math.round(X(v)) + 0.5;
+      if (x < ml - 0.5 || x > ml + pw + 0.5) continue;
+      ctx.beginPath(); ctx.moveTo(x, xb); ctx.lineTo(x, xb + 3); ctx.stroke();
+      const label = xf(v), tw = ctx.measureText(label).width;
+      ctx.fillText(label, clamp(x, tw / 2 + 1, W - tw / 2 - 1), xb + 5);
+    }
+
+    // series
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(ml - 6, mt - 6, pw + 12, ph + 12);
+    ctx.clip();
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    const order = S.hl ? [...series.filter(s => s.id !== S.hl), ...series.filter(s => s.id === S.hl)] : series;
+    for (const s of order) {
+      const dim = S.hl && s.id !== S.hl;
+      const px = new Float64Array(s.n), praw = new Float64Array(s.n), pdisp = s.smoothed ? new Float64Array(s.n) : praw;
+      for (let i = 0; i < s.n; i++) {
+        px[i] = X(s.xs[i]);
+        praw[i] = Number.isFinite(s.raw[i]) ? Y(s.raw[i]) : NaN;
+        if (s.smoothed) pdisp[i] = Number.isFinite(s.disp[i]) ? Y(s.disp[i]) : NaN;
+      }
+      ctx.strokeStyle = s.color;
+      ctx.fillStyle = s.color;
+      if (s.smoothed) {               // raw series, faint, behind the smoothed line
+        ctx.globalAlpha = dim ? 0.07 : 0.22;
+        ctx.lineWidth = 1;
+        strokeSeries(ctx, px, praw, pw);
+      }
+      const markers = s.markers;
+      ctx.globalAlpha = dim ? 0.22 : 1;
+      ctx.lineWidth = markers ? 1.5 : 2;
+      strokeSeries(ctx, px, pdisp, pw, s.smoothed);
+      if (markers) {
+        for (let i = 0; i < s.n; i++) if (Number.isFinite(pdisp[i])) dot(ctx, px[i], pdisp[i], 3.5, s.color);
+      } else {
+        for (let i = s.n - 1; i >= 0; i--) {   // end dot marks the latest value
+          if (Number.isFinite(pdisp[i])) { dot(ctx, px[i], pdisp[i], 3, s.color); break; }
+        }
+      }
+      // non-finite values: a small down-pointing triangle on the top edge where each run of nulls starts
+      ctx.fillStyle = s.color;
+      for (let i = 0; i < s.n; i++) {
+        if (s.orig[i] !== null || (i > 0 && s.orig[i - 1] === null)) continue;
+        const x = px[i];
+        if (!Number.isFinite(x)) continue;
+        ctx.beginPath();
+        ctx.moveTo(x - 4.5, mt - 3); ctx.lineTo(x + 4.5, mt - 3); ctx.lineTo(x, mt + 4);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
+    this.geom = { ml, mt, pw, ph, xmin, xmax, X, Y, series };
+    this.drawOverlay(hover);
+  }
+
+  renderNote(series, nonfinite, nonpos) {
+    const parts = [];
+    if (series.length === 1) {
+      const s = series[0];
+      for (let i = s.n - 1; i >= 0; i--) {
+        if (s.orig[i] === null) continue;
+        parts.push(h('span', { title: `latest value (step ${fmtInt(s.step[i])})`, text: fmtNum(s.orig[i], 4) }));
+        break;
+      }
+    }
+    if (nonfinite) parts.push(h('span', { class: 'warn', title: 'Non-finite values (NaN/inf) are gaps, marked ▼ on the top edge', text: '▼ non-finite' }));
+    if (nonpos) parts.push(h('span', { class: 'warn', title: 'Values ≤ 0 cannot be shown on a log axis', text: '≤0 hidden' }));
+    this.note.replaceChildren(...parts.flatMap((p, i) => (i ? [' · ', p] : [p])));
+  }
+
+  drawOverlay(hv) {
+    const cv = this.over;
+    const ctx = cv.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cv.width / dpr, cv.height / dpr);
+    const g = this.geom;
+    if (!hv || !g || hv.x < g.xmin || hv.x > g.xmax) return;
+    const x = Math.round(g.X(hv.x)) + 0.5;
+    ctx.strokeStyle = C.ink2;
+    ctx.globalAlpha = 0.55;
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, g.mt); ctx.lineTo(x, g.mt + g.ph); ctx.stroke();
+    ctx.globalAlpha = 1;
+    for (const s of g.series) {
+      const i = nearest(s.xs, hv.x, s.mono);
+      if (i < 0 || !Number.isFinite(s.disp[i]) || !covers(s, hv.x)) continue;
+      const py = g.Y(s.disp[i]);
+      if (py < g.mt - 6 || py > g.mt + g.ph + 6) continue;
+      dot(ctx, g.X(s.xs[i]), py, 4, s.color);
+    }
+  }
+
+  onPointer(e) {
+    const g = this.geom;
+    if (!g) return;
+    const r = this.over.getBoundingClientRect();
+    const xv = g.xmin + ((e.clientX - r.left - g.ml) / g.pw) * (g.xmax - g.xmin);
+    let best = null, bd = Infinity;
+    for (const s of g.series) {
+      const i = nearest(s.xs, xv, s.mono);
+      if (i < 0) continue;
+      const d = Math.abs(s.xs[i] - xv);
+      if (d < bd) { bd = d; best = s.xs[i]; }
+    }
+    setHover(best === null ? null : { chart: this, x: best, cx: e.clientX, cy: e.clientY });
+  }
+
+  onKey(e) {
+    const g = this.geom;
+    if (!g || !g.series.length) return;
+    const s = g.series.reduce((a, b) => (b.n > a.n ? b : a));   // the densest series drives the cursor
+    if (this.kIdx == null || this.kIdx >= s.n) this.kIdx = s.n - 1;
+    if (e) {
+      const k = e.shiftKey ? 10 : 1;
+      if (e.key === 'ArrowLeft') this.kIdx = Math.max(0, this.kIdx - k);
+      else if (e.key === 'ArrowRight') this.kIdx = Math.min(s.n - 1, this.kIdx + k);
+      else if (e.key === 'Home') this.kIdx = 0;
+      else if (e.key === 'End') this.kIdx = s.n - 1;
+      else if (e.key === 'Escape') { this.over.blur(); return; }
+      else return;
+      e.preventDefault();
+    }
+    const r = this.over.getBoundingClientRect();
+    const x = s.xs[this.kIdx];
+    setHover({ chart: this, x, cx: r.left + g.X(x), cy: r.top + g.mt + 8 });
+  }
+
+  renderTable() {
+    const rows = [];
+    for (const id of S.selected) {
+      const s = runData.get(id)?.series.get(this.key);
+      if (!s) continue;
+      let last = null, lastStep = null, min = Infinity, max = -Infinity;
+      for (let i = 0; i < s.y.length; i++) {
+        const v = s.y[i];
+        if (v === null) continue;
+        last = v;
+        lastStep = s.x[i];
+        if (v < min) min = v;
+        if (v > max) max = v;
+      }
+      rows.push(h('tr', null,
+        h('td', { title: id }, h('span', { class: 'lkey', vars: { '--c': slotVar(id) } }), S.byId.get(id)?.name || id),
+        h('td', { text: fmtNum(last) }),
+        h('td', { text: fmtInt(lastStep) }),
+        h('td', { text: Number.isFinite(min) ? fmtNum(min) : '—' }),
+        h('td', { text: Number.isFinite(max) ? fmtNum(max) : '—' })));
+    }
+    this.tbl.replaceChildren(h('table', null,
+      h('thead', null, h('tr', null, ...['run', 'last', 'step', 'min', 'max'].map(t => h('th', { text: t })))),
+      h('tbody', null, rows)));
+  }
+}
+
+function showTip(hv) {
+  if (!hv || !hv.chart.geom) { tip.hidden = true; return; }
+  const g = hv.chart.geom;
+  const rows = [];
+  for (const s of g.series) {
+    const i = nearest(s.xs, hv.x, s.mono);
+    if (i < 0) continue;
+    const v = s.orig[i];
+    const shown = s.smoothed && Number.isFinite(s.disp[i]) ? s.disp[i] : v;
+    const inside = covers(s, hv.x);
+    const sub = [];
+    if (!inside) sub.push((hv.x > s.xs[i] ? 'last at step ' : 'first at step ') + fmtInt(s.step[i]));
+    else if (S.x === 'time' || s.step[i] !== hv.x) sub.push('step ' + fmtInt(s.step[i]));
+    if (s.smoothed && v !== null) sub.push('raw ' + fmtNum(v));
+    rows.push(h('div', { class: 'tt-row' + (inside ? '' : ' out'), vars: { '--c': s.color } },
+      h('span', { class: 'tt-key' }),
+      h('span', { class: 'tt-val', text: v === null ? 'non-finite' : fmtNum(shown) }),
+      h('span', { class: 'tt-name', text: s.name }),
+      sub.length ? h('span', { class: 'tt-sub', text: sub.join(' · ') }) : null));
+  }
+  const head = S.x === 'time' ? `${fmtNum(hv.x, 3)} min since start` : `step ${fmtInt(hv.x)}`;
+  tip.replaceChildren(h('div', { class: 'tt-head' }, h('b', { text: hv.chart.key }), ' · ' + head), ...rows);
+  tip.hidden = false;
+  const w = tip.offsetWidth, ht = tip.offsetHeight, pad = 14;
+  let x = hv.cx + pad, y = hv.cy + pad;
+  if (x + w > innerWidth - 8) x = hv.cx - pad - w;
+  if (y + ht > innerHeight - 8) y = hv.cy - pad - ht;
+  tip.style.transform = `translate(${Math.max(8, x)}px, ${Math.max(8, y)}px)`;
+}
+
+function renderCharts() {
+  const host = $('#chart-groups'), empty = $('#charts-empty');
+  const keys = [], seen = new Set();
+  for (const id of S.selected) {
+    const d = runData.get(id);
+    if (d) for (const k of d.keys) if (!seen.has(k)) { seen.add(k); keys.push(k); }
+  }
+  const match = metricMatcher(S.q);
+  const shown = keys.filter(k => match(k));
+  let msg = null;
+  if (!S.loaded) msg = 'Loading…';
+  else if (!S.runs.length) msg = `No runs yet under ${S.root || 'the runs directory'}. New runs appear here automatically.`;
+  else if (!S.selected.length) msg = 'Select runs in the sidebar to compare their metrics.';
+  else if (!keys.length) msg = S.selected.some(id => !runData.get(id)?.loaded) ? 'Loading metrics…' : 'No metrics logged yet for the selected runs.';
+  else if (!shown.length) msg = `No metrics match “${S.q}”.`;
+  empty.textContent = msg || '';
+  empty.hidden = !msg;
+  host.hidden = !!msg;
+  if (msg) return;
+
+  const byGroup = new Map(GROUPS.map(g => [g, []]));
+  for (const k of shown) byGroup.get(groupOf(k)).push(k);
+  const sig = shown.join('\n');
+  if (sig !== layoutSig) {
+    layoutSig = sig;
+    const sections = [];
+    for (const [g, ks] of byGroup) {
+      if (!ks.length) continue;
+      let sec = groupEls.get(g);
+      if (!sec) {
+        const count = h('span', { class: 'count' });
+        const grid = h('div', { class: 'grid' });
+        const el = h('details', { class: 'group' }, h('summary', null, h('span', { text: g }), count), grid);
+        el.addEventListener('toggle', () => {
+          if (el.open) S.collapsed.delete(g); else S.collapsed.add(g);
+          writeUrl();
+        });
+        groupEls.set(g, (sec = { el, count, grid }));
+      }
+      sec.count.textContent = String(ks.length);
+      sec.el.open = !S.collapsed.has(g);
+      sec.grid.replaceChildren(...ks.map(k => {
+        let c = charts.get(k);
+        if (!c) charts.set(k, (c = new Chart(k)));
+        return c.el;
+      }));
+      sections.push(sec.el);
+    }
+    host.replaceChildren(...sections);
+    const keep = new Set(shown);
+    for (const [k, c] of charts) if (!keep.has(k)) { c.destroy(); charts.delete(k); }
+  } else {
+    for (const [g, sec] of groupEls) sec.el.open = !S.collapsed.has(g);
+  }
+  refreshCharts();
+}
+
+// ------------------------------------------------------------------ figures
+const figPanels = new Map();
+function figUrl(id, name, step) {
+  return `/runs/${enc(id)}/figures/${enc(name)}/${String(step).padStart(8, '0')}.png`;
+}
+function figPanel(id) {
+  const img = h('img', { decoding: 'async', alt: '' });
+  const link = h('a', { class: 'fig-link', target: '_blank', rel: 'noopener', title: 'Open full size' }, img);
+  const p = { id, img, link, src: '', failed: false, name: h('span', { class: 'fig-name' }), at: h('span', { class: 'fig-at' }), msg: h('div', { class: 'fig-msg', hidden: true }) };
+  const show = ok => {
+    p.failed = !ok;
+    link.hidden = !ok;
+    p.msg.hidden = ok;
+    if (!ok) p.msg.textContent = 'Image not available yet (retrying).';
+  };
+  img.addEventListener('load', () => show(true));
+  img.addEventListener('error', () => { if (img.getAttribute('src')) show(false); });
+  p.show = show;
+  p.el = h('div', { class: 'fig-panel' }, h('div', { class: 'fig-head' }, h('span', { class: 'lkey' }), p.name, p.at), link, p.msg);
+  p.el.addEventListener('click', e => {
+    if (e.target.closest('a') || S.focus === id) return;
+    S.focus = id;
+    writeUrl();
+    drawFigures();
+  });
+  return p;
+}
+async function renderFigures() {
+  drawFigures();
+  const missing = S.selected.filter(id => !rd(id).figures);
+  if (!missing.length) return;
+  try { await Promise.all(missing.map(fetchFigures)); }
+  catch (err) { console.warn(err); S.offline = true; renderConn(); }
+  if (S.tab === 'figures') drawFigures();
+}
+let figTabsSig = '', figFocusSig = '';
+function drawFigures() {
+  const empty = $('#fig-empty'), grid = $('#fig-grid'), bar = $('#view-figures .controls');
+  const say = msg => {
+    empty.textContent = msg;
+    empty.hidden = false;
+    grid.hidden = true;
+    bar.hidden = true;
+  };
+  if (!S.selected.length) return say(S.runs.length ? 'Select runs in the sidebar to see their figures.' : 'No runs yet.');
+  const focus = currentFocus();
+  const figs = id => runData.get(id)?.figures || {};
+  const names = [];
+  for (const id of [focus, ...S.selected.filter(x => x !== focus)]) {
+    for (const n of Object.keys(figs(id))) if (!names.includes(n)) names.push(n);
+  }
+  if (!names.length) {
+    return say(S.selected.some(id => !runData.get(id)?.figures) ? 'Loading figures…' : 'No figures logged yet for the selected runs.');
+  }
+  empty.hidden = true;
+  grid.hidden = false;
+  bar.hidden = false;
+  if (!S.fig || !names.includes(S.fig)) S.fig = names[0];
+
+  const sel = $('#fig-focus');
+  $('#fig-focus-wrap').hidden = S.selected.length < 2;
+  const fsig = S.selected.map(id => id + ':' + (S.byId.get(id)?.name || '')).join(',') + '|' + focus;
+  if (fsig !== figFocusSig) {
+    figFocusSig = fsig;
+    sel.replaceChildren(...S.selected.map(id => h('option', { value: id, text: S.byId.get(id)?.name || id })));
+    sel.value = focus;
+  }
+  const tsig = names.join('\n') + '|' + S.fig;
+  if (tsig !== figTabsSig) {
+    figTabsSig = tsig;
+    $('#fig-tabs').replaceChildren(...names.map(n => {
+      const b = h('button', { type: 'button', class: 'chip', role: 'tab', 'aria-selected': String(n === S.fig), 'aria-pressed': String(n === S.fig), text: n });
+      b.addEventListener('click', () => { S.fig = n; writeUrl(); drawFigures(); });
+      return b;
+    }));
+  }
+
+  let steps = figs(focus)[S.fig];
+  if (!steps || !steps.length) {
+    const all = new Set();
+    for (const id of S.selected) for (const s of figs(id)[S.fig] || []) all.add(s);
+    steps = [...all].sort((a, b) => a - b);
+  }
+  const idx = S.figStep == null ? steps.length - 1 : nearestIdx(steps, S.figStep);
+  const target = steps[idx];
+  const slider = $('#fig-slider');
+  slider.max = String(Math.max(0, steps.length - 1));
+  slider.value = String(idx);
+  slider.disabled = steps.length < 2;
+  slider._steps = steps;
+  $('#fig-step').textContent = `step ${fmtInt(target)}  (${idx + 1} of ${steps.length})`;
+  $('#fig-latest').setAttribute('aria-pressed', String(S.figStep == null));
+
+  const panels = [];
+  for (const id of S.selected) {
+    let p = figPanels.get(id);
+    if (!p) figPanels.set(id, (p = figPanel(id)));
+    const run = S.byId.get(id);
+    p.el.style.setProperty('--c', slotVar(id));
+    p.el.classList.toggle('focus', id === focus && S.selected.length > 1);
+    p.name.textContent = run?.name || id;
+    const list = figs(id)[S.fig] || [];
+    if (!list.length) {
+      p.link.hidden = true;
+      p.msg.hidden = false;
+      p.msg.textContent = runData.get(id)?.figures ? `No “${S.fig}” figures for this run.` : 'Loading…';
+      p.at.textContent = '';
+    } else {
+      const st = list[nearestIdx(list, target)];
+      const src = figUrl(id, S.fig, st);
+      if (p.src !== src) {
+        p.src = src;
+        p.img.src = src;
+        p.link.href = src;
+        p.img.alt = `${S.fig} at step ${st}, ${run?.name || id}`;
+        p.show(true);
+      } else if (p.failed) {
+        p.img.src = src + '?retry=' + Date.now();   // e.g. requested while the trainer was writing it
+      } else {
+        p.show(true);
+      }
+      p.at.textContent = `step ${fmtInt(st)}` + (st !== target ? ` (nearest to ${fmtInt(target)})` : '');
+    }
+    panels.push(p.el);
+  }
+  for (const id of figPanels.keys()) if (!S.selected.includes(id)) figPanels.delete(id);
+  if (panels.length !== grid.children.length || panels.some((el, i) => grid.children[i] !== el)) grid.replaceChildren(...panels);
+  grid.classList.toggle('single', panels.length === 1);
+}
+
+// ------------------------------------------------------------------ config
+function flatten(obj, prefix, out) {
+  for (const [k, v] of Object.entries(obj || {})) {
+    const path = prefix ? prefix + '.' + k : k;
+    if (v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length) flatten(v, path, out);
+    else out.set(path, v);
+  }
+  return out;
+}
+function fmtValue(v) {
+  if (v === undefined) return null;
+  if (v === null) return 'null';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'object') return JSON.stringify(v).replace(/,/g, ', ');
+  return String(v);
+}
+const shellQuote = a => (/^[\w@%+=:,./-]+$/.test(a) ? a : `'${String(a).replace(/'/g, `'\\''`)}'`);
+async function renderConfig() {
+  drawConfig();
+  const missing = S.selected.filter(id => !rd(id).config || rd(id).config.error);
+  if (!missing.length) return;
+  try { await Promise.all(missing.map(fetchConfig)); }
+  catch (err) { console.warn(err); S.offline = true; renderConn(); }
+  if (S.tab === 'config') drawConfig();
+}
+// Run-info rows change while a run is live; their cells update in place so that polling
+// never rebuilds the table (which would drop a text selection).
+const RUN_ROWS = [
+  ['id', r => r.id],
+  ['state', r => (r.state || 'unknown') + (r.message ? ' — ' + r.message : '')],
+  ['step', r => (r.step == null ? undefined : r.step)],
+  ['created', r => (r.created ? fmtDate(r.created) : undefined)],
+  ['updated', r => (r.updated ? fmtDate(r.updated) : undefined)],
+];
+let cfgSig = '', cfgLive = [];
+function cell(td, v) {
+  const s = fmtValue(v);
+  td.replaceChildren(s === null ? h('span', { class: 'missing', text: '—' }) : s);
+  return td;
+}
+function drawConfig() {
+  const table = $('#cfg-table'), empty = $('#cfg-empty'), bar = $('#view-config .controls');
+  const sig = [S.selected.join(','), S.diffOnly, S.cq, ...S.selected.map(id => {
+    const d = runData.get(id);
+    return `${d?.config ? (d.config.error ? 'err' : 'ok') : 'none'}:${slotOf[id]}:${S.byId.get(id)?.name}`;
+  })].join('|');
+  if (sig === cfgSig) {
+    for (const { tds, fn } of cfgLive) tds.forEach((td, i) => cell(td, fn(S.byId.get(S.selected[i]) || { id: S.selected[i] })));
+    return;
+  }
+  cfgSig = sig;
+  cfgLive = [];
+  if (!S.selected.length) {
+    empty.textContent = S.runs.length ? 'Select runs in the sidebar to compare their configs.' : 'No runs yet.';
+    empty.hidden = false;
+    table.replaceChildren();
+    bar.hidden = true;
+    $('#cfg-summary').textContent = '';
+    return;
+  }
+  empty.hidden = true;
+  bar.hidden = false;
+  const ids = S.selected;
+  const multi = ids.length > 1;
+  $('#cfg-diff').disabled = !multi;
+  const docs = ids.map(id => runData.get(id)?.config);
+  const runs = ids.map(id => S.byId.get(id) || {});
+
+  // rows: [kind, key, values[], comparable, section, live getter]
+  const rows = [];
+  for (const [key, fn] of RUN_ROWS) rows.push(['run', key, runs.map((r, i) => fn({ id: ids[i], ...r })), false, null, fn]);
+  const metas = docs.map(d => (d && d.meta) || {});
+  const metaKeys = ['name', 'git.commit', 'git.branch', 'git.dirty', 'host', 'device', 'preset', 'python', 'torch', 'argv'];
+  const metaFlat = metas.map(m => flatten(m, '', new Map()));
+  for (const m of metaFlat) for (const k of m.keys()) if (!metaKeys.includes(k) && k !== 'created') metaKeys.push(k);
+  for (const k of metaKeys) {
+    const vals = metaFlat.map(m => m.get(k));
+    if (vals.every(v => v === undefined)) continue;
+    if (k === 'argv') { rows.push(['meta', k, metas.map(m => (Array.isArray(m.argv) ? m.argv.map(shellQuote).join(' ') : m.argv)), true]); continue; }
+    rows.push(['meta', k, vals, true]);
+  }
+  const flats = docs.map(d => flatten((d && d.config) || {}, '', new Map()));
+  const order = [];
+  const seen = new Set();
+  for (const f of flats) for (const k of f.keys()) if (!seen.has(k)) { seen.add(k); order.push(k); }
+  for (const k of order) {
+    const dot = k.indexOf('.');
+    rows.push(['config', k, flats.map(f => f.get(k)), true, dot > 0 ? k.slice(0, dot) : 'general']);
+  }
+
+  const q = S.cq.trim().toLowerCase();
+  let differing = 0, total = 0;
+  const body = [];
+  let lastSec = null;
+  for (const [kind, key, vals, comparable, sub, live] of rows) {
+    const section = kind === 'config' ? sub : kind;
+    const label = kind === 'config' ? key : (kind === 'meta' ? 'meta.' + key : key);
+    const differs = multi && comparable && new Set(vals.map(v => JSON.stringify(v === undefined ? '\u0000missing' : v))).size > 1;
+    if (comparable) { total++; if (differs) differing++; }
+    if (q && !label.toLowerCase().includes(q)) continue;
+    if (S.diffOnly && multi && comparable && !differs) continue;
+    if (section !== lastSec) {
+      lastSec = section;
+      body.push(h('tr', { class: 'sec' }, h('th', { colspan: String(ids.length + 1), text: section })));
+    }
+    const dot = label.lastIndexOf('.');
+    const keyCell = h('td', { class: 'k' }, dot > 0 ? h('span', { class: 'sec', text: label.slice(0, dot + 1) }) : null, dot > 0 ? label.slice(dot + 1) : label);
+    const tds = vals.map(v => cell(h('td', { class: 'v' }), v));
+    if (live) cfgLive.push({ tds, fn: live });
+    body.push(h('tr', { class: differs ? 'diff' : null }, keyCell, ...tds));
+  }
+  const head = h('tr', null, h('th', { text: 'key' }), ...ids.map(id => h('th', { title: id },
+    h('span', { class: 'lkey', vars: { '--c': slotVar(id) } }), S.byId.get(id)?.name || id)));
+  const cols = h('colgroup', null, h('col', { class: 'kcol' }), ids.map(() => h('col')));
+  table.replaceChildren(cols, h('thead', null, head), h('tbody', null, body));
+  $('#cfg-summary').textContent = multi ? `${differing} of ${total} keys differ` : `${total} keys`;
+}
+
+// ------------------------------------------------------------------ tabs + render
+function setTab(tab, quiet) {
+  S.tab = tab;
+  for (const b of document.querySelectorAll('.tab')) b.setAttribute('aria-selected', String(b.dataset.tab === tab));
+  for (const v of ['charts', 'figures', 'config']) $('#view-' + v).hidden = v !== tab;
+  if (!quiet) { writeUrl(); render(); }
+}
+function render() {
+  renderConn();
+  renderRunList();
+  renderLegend();
+  if (S.tab === 'charts') renderCharts();
+  else if (S.tab === 'figures') renderFigures();
+  else renderConfig();
+}
+function syncControls() {
+  $('#metric-filter').value = S.q;
+  $('#run-filter').value = S.rq;
+  $('#cfg-filter').value = S.cq;
+  $('#smooth').value = String(S.smooth);
+  $('#smooth-val').textContent = S.smooth.toFixed(2);
+  for (const b of document.querySelectorAll('.seg [data-x]')) b.setAttribute('aria-pressed', String(b.dataset.x === S.x));
+  $('#cfg-diff').checked = S.diffOnly;
+}
+
+// ------------------------------------------------------------------ events
+function bind() {
+  for (const b of document.querySelectorAll('.tab')) b.addEventListener('click', () => setTab(b.dataset.tab));
+  $('#run-filter').addEventListener('input', e => { S.rq = e.target.value; writeUrl(); renderRunList(); });
+  $('#metric-filter').addEventListener('input', e => { S.q = e.target.value; writeUrl(); renderCharts(); });
+  $('#cfg-filter').addEventListener('input', e => { S.cq = e.target.value; writeUrl(); drawConfig(); });
+  $('#cfg-diff').addEventListener('change', e => { S.diffOnly = e.target.checked; writeUrl(); drawConfig(); });
+  $('#smooth').addEventListener('input', e => {
+    S.smooth = clamp(parseFloat(e.target.value) || 0, 0, 0.99);
+    $('#smooth-val').textContent = S.smooth.toFixed(2);
+    writeUrl();
+    refreshCharts();
+  });
+  for (const b of document.querySelectorAll('.seg [data-x]')) {
+    b.addEventListener('click', () => { S.x = b.dataset.x; syncControls(); writeUrl(); refreshCharts(); });
+  }
+  $('#select-shown').addEventListener('click', () => {
+    const match = runMatcher(S.rq);
+    for (const r of S.runs.filter(match)) {
+      if (S.selected.length >= SLOTS) { toast(`Selected the first ${SLOTS} runs shown (one color each).`); break; }
+      if (!S.selected.includes(r.id)) { assignSlot(r.id, S.selected); S.selected.push(r.id); }
+    }
+    selectionChanged();
+  });
+  $('#select-none').addEventListener('click', () => { S.selected = []; selectionChanged(); });
+  $('#theme-btn').addEventListener('click', () => {
+    S.theme = { auto: 'light', light: 'dark', dark: 'auto' }[S.theme] || 'auto';
+    ls.set('jem.theme', S.theme);
+    applyTheme();
+    writeUrl();
+    refreshCharts();
+  });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { readColors(); refreshCharts(); });
+  $('#fig-focus').addEventListener('change', e => { S.focus = e.target.value; writeUrl(); drawFigures(); });
+  let figTimer = null;
+  $('#fig-slider').addEventListener('input', e => {
+    const steps = e.target._steps || [];
+    const i = parseInt(e.target.value, 10);
+    S.figStep = i >= steps.length - 1 ? null : steps[i];
+    clearTimeout(figTimer);
+    figTimer = setTimeout(() => { writeUrl(); drawFigures(); }, 40);
+  });
+  $('#fig-latest').addEventListener('click', () => { S.figStep = null; writeUrl(); drawFigures(); });
+  $('#main').addEventListener('scroll', () => { if (hover) setHover(null); }, { passive: true });
+  const toolbars = new ResizeObserver(() => {   // sticky table headers sit just below the toolbar
+    for (const tb of document.querySelectorAll('.view .toolbar')) {
+      if (tb.offsetHeight) $('#main').style.setProperty('--toolbar-h', tb.offsetHeight + 'px');
+    }
+  });
+  for (const tb of document.querySelectorAll('.view .toolbar')) toolbars.observe(tb);
+}
+
+// ------------------------------------------------------------------ init
+async function init() {
+  bind();
+  const params = readParams();
+  if (['auto', 'light', 'dark'].includes(params.get('theme'))) S.theme = params.get('theme');
+  applyTheme();
+  syncControls();
+  for (;;) {
+    try {
+      await refreshRuns();
+      break;
+    } catch (err) {
+      S.offline = true;
+      renderConn();
+      await new Promise(r => setTimeout(r, POLL_RETRY));
+    }
+  }
+  api('/api/info').then(info => {
+    S.root = info.root || '';
+    const el = $('#root-path');
+    el.textContent = S.root.split('/').slice(-2).join('/');
+    el.title = 'Runs directory: ' + S.root;
+    if (!S.runs.length) render();
+  }).catch(() => {});
+  S.loaded = true;
+  applyParams(params);
+  if (!params.has('runs') && S.runs.length) {
+    assignSlot(S.runs[0].id, []);
+    S.selected = [S.runs[0].id];
+  }
+  setTab(S.tab, true);
+  writeUrl();
+  render();
+  try { await Promise.all(S.selected.map(fetchMetrics)); } catch (err) { console.warn(err); S.offline = true; }
+  render();
+  if (S.tab === 'figures') await renderFigures();
+  else if (S.tab === 'config') await renderConfig();
+  requestAnimationFrame(() => requestAnimationFrame(() => { document.documentElement.dataset.ready = '1'; }));
+  schedulePoll(anyLive() ? POLL_LIVE : POLL_IDLE);
+}
+init();
+})();
+</script>
+</body>
+</html>
