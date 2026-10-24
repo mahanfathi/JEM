@@ -1,4 +1,4 @@
-"""Command line: `jem train | eval | dash | presets`."""
+"""Command line: `jem train | eval | table | dash | presets`."""
 
 from __future__ import annotations
 
@@ -51,6 +51,41 @@ def _dash(args) -> None:
     serve(args.root, host=args.host, port=args.port)
 
 
+def _table(args) -> None:
+    """Markdown table of the last eval of each run, seeds (`<name>-s<k>`) pooled as mean ± std."""
+    import re
+    import statistics
+
+    keys = args.keys.split(",")
+    groups: dict[str, list[dict]] = {}
+    for run in sorted(Path(args.root).iterdir()):
+        metrics = run / "metrics.jsonl"
+        if not metrics.exists():
+            continue
+        rows = [json.loads(line) for line in metrics.read_text().splitlines() if '"eval/' in line]
+        if args.step:
+            rows = [r for r in rows if r["step"] == args.step]
+        if not rows:
+            continue
+        name = json.loads((run / "config.json").read_text())["meta"]["name"]
+        if args.match and not re.search(args.match, name):
+            continue
+        groups.setdefault(re.sub(r"-s\d+$", "", name), []).append(rows[-1])
+
+    def cell(values: list[float]) -> str:
+        if not values:
+            return "–"
+        if len(values) == 1:
+            return f"{values[0]:.3g}"
+        return f"{statistics.mean(values):.3g} ± {statistics.stdev(values):.2g}"
+
+    print("| run | n | " + " | ".join(k.removeprefix("eval/") for k in keys) + " |")
+    print("|---|---|" + "---|" * len(keys))
+    for name, rows in groups.items():
+        cells = [cell([r[k] for r in rows if r.get(k) is not None]) for k in keys]
+        print(f"| {name} | {len(rows)} | " + " | ".join(cells) + " |")
+
+
 def _presets(_args) -> None:
     from jem.config import PRESETS
 
@@ -81,6 +116,17 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8765)
     p.set_defaults(fn=_dash)
+
+    p = sub.add_parser("table", help="markdown table of final eval metrics per run")
+    p.add_argument("--root", default="runs")
+    p.add_argument("--match", default=None, help="regex on run names")
+    p.add_argument("--step", type=int, default=None, help="use the eval at this step")
+    p.add_argument(
+        "--keys",
+        default="eval/nmi,eval/policy_kl,eval/heading_err_deg,eval/compose_err_deg,"
+        "eval/algebra_err_deg,eval/antipodal_cos,eval/rollout_agree,eval/track_acc",
+    )
+    p.set_defaults(fn=_table)
 
     p = sub.add_parser("presets", help="list presets")
     p.set_defaults(fn=_presets)

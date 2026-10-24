@@ -50,51 +50,65 @@ class Proposals:
 # ----------------------------------------------------------------------------- Newton
 
 
-def option_objective(z: Tensor, U: Tensor, prec: float) -> Tensor:
-    """F at C candidate points per problem: z (B, C, d), U (B, N, K, d) -> (B, C)."""
+def option_objective(z: Tensor, U: Tensor, prec: float, w: Tensor | None = None) -> Tensor:
+    """F at C candidate points per problem: z (B, C, d), U (B, N, K, d) -> (B, C).
+
+    Optional step weights w (B, N) turn the sum over steps into a weighted sum.
+    """
     logits = torch.einsum("bcd,bnkd->bcnk", z, U)
-    nll = (logits.logsumexp(-1) - logits[..., 0]).sum(-1)
+    nll = logits.logsumexp(-1) - logits[..., 0]
+    nll = (nll if w is None else nll * w[:, None]).sum(-1)
     return nll + 0.5 * prec * z.pow(2).sum(-1)
 
 
-def _grad(z: Tensor, U: Tensor, prec: float) -> tuple[Tensor, Tensor, Tensor]:
+def _grad(z: Tensor, U: Tensor, prec: float, w: Tensor | None = None):
     pi = torch.einsum("bd,bnkd->bnk", z, U).softmax(-1)
     mean = torch.einsum("bnk,bnkd->bnd", pi, U)
-    return (mean - U[:, :, 0]).sum(1) + prec * z, pi, mean
+    resid = mean - U[:, :, 0]
+    if w is not None:
+        resid = resid * w[..., None]
+    return resid.sum(1) + prec * z, pi, mean
 
 
-def _hessian(pi: Tensor, mean: Tensor, U: Tensor, prec: float) -> Tensor:
+def _hessian(pi: Tensor, mean: Tensor, U: Tensor, prec: float, w: Tensor | None = None) -> Tensor:
     b, n, k, d = U.shape
+    if w is not None:
+        pi, mean = pi * w[..., None], mean * w[..., None].sqrt()
     x = (pi.sqrt().unsqueeze(-1) * U).reshape(b, n * k, d)
     h = x.transpose(1, 2) @ x - mean.transpose(1, 2) @ mean
     return h + prec * torch.eye(d, device=U.device, dtype=U.dtype)
 
 
 @torch.no_grad()
-def newton_solve(U: Tensor, prec: float, iters: int) -> tuple[Tensor, Tensor]:
+def newton_solve(
+    U: Tensor, prec: float, iters: int, w: Tensor | None = None
+) -> tuple[Tensor, Tensor]:
     """Minimise F; returns z* (B, d) and the final gradient norm (B,)."""
     b, _, _, d = U.shape
     z = U.new_zeros(b, d)
     steps = torch.tensor(LINE_SEARCH, device=U.device, dtype=U.dtype)
     rows = torch.arange(b, device=U.device)
     for _ in range(iters):
-        g, pi, mean = _grad(z, U, prec)
-        delta = torch.linalg.solve(_hessian(pi, mean, U, prec), g)
+        g, pi, mean = _grad(z, U, prec, w)
+        delta = torch.linalg.solve(_hessian(pi, mean, U, prec, w), g)
         cand = z[:, None] - steps[None, :, None] * delta[:, None]
-        z = cand[rows, option_objective(cand, U, prec).argmin(-1)]
-    return z, _grad(z, U, prec)[0].norm(dim=-1)
+        z = cand[rows, option_objective(cand, U, prec, w).argmin(-1)]
+    return z, _grad(z, U, prec, w)[0].norm(dim=-1)
 
 
 def infer_newton(
-    U: Tensor, prec: float, iters: int, implicit_grad: bool = True
+    U: Tensor, prec: float, iters: int, implicit_grad: bool = True, w: Tensor | None = None
 ) -> tuple[Tensor, Tensor]:
-    """MAP option with (optionally) the exact implicit gradient. Returns (z, residual)."""
-    z_star, residual = newton_solve(U.detach(), prec, iters)
+    """MAP option with (optionally) the exact implicit gradient. Returns (z, residual).
+
+    w (B, N) optionally weights the context steps (e.g. recency under option switching).
+    """
+    z_star, residual = newton_solve(U.detach(), prec, iters, w)
     if not (implicit_grad and U.requires_grad):
         return z_star, residual
-    g, pi, mean = _grad(z_star, U, prec)
+    g, pi, mean = _grad(z_star, U, prec, w)
     with torch.no_grad():
-        h = _hessian(pi, mean, U, prec)
+        h = _hessian(pi, mean, U, prec, w)
     return z_star - torch.linalg.solve(h, g), residual
 
 

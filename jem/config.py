@@ -65,6 +65,7 @@ class ObjectiveConfig:
     name: str = "jem"  # jem | legacy
     num_proposals: int = 256  # uniform (randomised Sobol) action proposals per step
     symmetric: bool = True  # jem: also infer from targets and predict the context
+    hazard: float = 0.0  # jem: assumed per-step option-switch probability (0 = options persist)
     # legacy (2022, Mordatch-style) terms
     action_chains: int = 64
     action_steps: int = 10

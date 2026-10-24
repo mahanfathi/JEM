@@ -109,3 +109,29 @@ def test_config_overrides():
     assert cfg.eval.context_lens == (1, 2) and cfg.train.amp is True
     with pytest.raises(KeyError):
         make_config("jem", ["model.nope=1"])
+
+
+def test_weighted_newton_matches_duplicated_steps():
+    U = _features(n=4, seed=5)
+    w = torch.tensor([1.0, 2.0, 1.0, 1.0], dtype=U.dtype).expand(U.shape[0], 4)
+    z_w, res = newton_solve(U, 1.0, 25, w)
+    z_dup, _ = newton_solve(torch.cat([U, U[:, 1:2]], 1), 1.0, 25)
+    assert res.max() < 1e-9 and torch.allclose(z_w, z_dup, atol=1e-10)
+    ones = torch.ones(U.shape[0], 4, dtype=U.dtype)
+    assert torch.allclose(newton_solve(U, 1.0, 25, ones)[0], newton_solve(U, 1.0, 25)[0])
+
+
+def test_weighted_implicit_gradient_matches_finite_differences():
+    U0, U1 = _features(seed=6), _features(seed=7)
+    w = torch.rand(U0.shape[:2], generator=torch.Generator().manual_seed(8), dtype=U0.dtype)
+    v = torch.randn(
+        U0.shape[0], U0.shape[-1], dtype=U0.dtype, generator=torch.Generator().manual_seed(9)
+    )
+    theta = torch.tensor(0.4, dtype=U0.dtype, requires_grad=True)
+    z, _ = infer_newton(theta * U0 + U1, 1.0, 30, True, w)
+    (grad,) = torch.autograd.grad((v * z).sum(), theta)
+    eps = 1e-3  # one problem stalls at a 1e-10 residual, so smaller eps is noisier
+    zp, _ = newton_solve((0.4 + eps) * U0 + U1, 1.0, 30, w)
+    zm, _ = newton_solve((0.4 - eps) * U0 + U1, 1.0, 30, w)
+    fd = ((v * zp).sum() - (v * zm).sum()) / (2 * eps)
+    assert torch.allclose(grad, fd, rtol=2e-4, atol=1e-7)

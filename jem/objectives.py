@@ -6,6 +6,9 @@ jem     Infer the option from the context steps of a window (exact Newton MAP wi
         only what persists across time helps. With `symmetric`, the roles of the two
         halves are swapped as well (cross-fitting; features are shared, so it is cheap).
         Negatives never come from the model, so there is no sampler/energy feedback loop.
+        With `objective.hazard` h > 0 (options may switch), context steps are weighted by
+        (1-h)^distance-to-boundary and each target is scored by a two-component mixture:
+        same option with probability (1-h)^lag, else an outlier at the uniform rate.
 
 legacy  Faithful port of the 2022 `loss_ML_KL_KLz`: Langevin inference of z from the
         context (backpropagated through), Langevin action negatives, softplus ML loss
@@ -38,29 +41,49 @@ def jem_loss(model, win: Window, proposals: Tensor, cfg: Config) -> tuple[Tensor
     U = model.scale * phi.float()  # (B, L, 1+M, d)
     prec = cfg.infer.prior_std**-2
 
-    pairs = [(U[:, :nc], U[:, nc:])]
+    b, nt = U.shape[0], U.shape[1] - nc
+    # Steps from the context/target boundary, for the switching-aware variant (hazard > 0).
+    before = torch.arange(nc - 1, -1, -1, device=U.device)  # context steps, forward pair
+    after = torch.arange(1, nt + 1, device=U.device)  # target lags, forward pair
+    pairs = [(U[:, :nc], U[:, nc:], before, after)]
     if cfg.objective.symmetric:
-        pairs.append((U[:, nc:], U[:, :nc]))
+        # Reverse pair: infer from the second half; first-half step t lies nc - t steps back.
+        pairs.append((U[:, nc:], U[:, :nc], torch.arange(nt, device=U.device), before + 1))
     if len(pairs) == 2 and pairs[0][0].shape == pairs[1][0].shape:
-        pairs = [(torch.cat([p[0] for p in pairs]), torch.cat([p[1] for p in pairs]))]
+        pairs = [
+            tuple(
+                torch.cat([p[i] if i < 2 else p[i].expand(b, -1) for p in pairs]) for i in range(4)
+            )
+        ]
 
-    nlls, zs, residuals, ess = [], [], [], []
-    for ctx, tgt in pairs:
-        z, residual = infer_newton(ctx, prec, cfg.infer.iters, cfg.infer.implicit_grad)
+    nlls, losses, zs, residuals, ess = [], [], [], [], []
+    hazard = cfg.objective.hazard
+    for ctx, tgt, dist, lag in pairs:
+        w = (1 - hazard) ** dist.float().expand(ctx.shape[0], -1) if hazard > 0 else None
+        z, residual = infer_newton(ctx, prec, cfg.infer.iters, cfg.infer.implicit_grad, w)
         logp = torch.einsum("bd,bnkd->bnk", z, tgt).log_softmax(-1)
-        nlls.append(-logp[..., 0].mean())
+        nll = -logp[..., 0].mean()
+        nlls.append(nll)
+        if hazard > 0:
+            # A target shares the context's option with probability (1-h)^lag; otherwise it is
+            # an outlier scored like the uniform policy (1/K in InfoNCE units).
+            log_stay = lag.float().expand(tgt.shape[0], -1) * math.log1p(-hazard)
+            log_switch = torch.log(-torch.expm1(log_stay)) - math.log(tgt.shape[2])
+            losses.append(-torch.logaddexp(log_stay + logp[..., 0], log_switch).mean())
+        else:
+            losses.append(nll)
         zs.append(z.detach())
         residuals.append(residual)
         ess.append((1.0 / logp.detach().exp().pow(2).sum(-1)).mean())
-    loss = torch.stack(nlls).mean()
+    loss = torch.stack(losses).mean()
 
     with torch.no_grad():
         z = torch.cat(zs)
         k = U.shape[2]
         prop = phi[:, :, 1:].float()
         stats = {
-            "train/nll": loss.detach(),
-            "train/gain": math.log(k) - loss.detach(),  # nats above uniform
+            "train/nll": torch.stack(nlls).mean().detach(),
+            "train/gain": math.log(k) - torch.stack(nlls).mean().detach(),  # nats above uniform
             "diag/z_norm": z.norm(dim=-1).mean(),
             "diag/z_spread": _spread(z),
             "diag/scale": model.scale.detach(),
