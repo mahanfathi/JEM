@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Phase 3: composing options over time on unseen obstacle tasks (docs/DESIGN.md, experiment log E5).
+# Phase 3: composing options over time on unseen obstacle tasks (experiment E5).
 # Usage: ./experiments/phase3.sh [run-name-regex]     (default: the E1 seeds, ^jem-s[0-9]$)
 # For each matching run: four planners x {circle, cup} x horizon {20, 40}, 64 episodes each.
 # Results are appended to the run's metrics.jsonl as down/<task>_h<H>/<planner>_{success,steps}.

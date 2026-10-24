@@ -1,7 +1,13 @@
-"""The human-readable excerpt must track the design doc's revision (see CLAUDE.md)."""
+"""Local design notes (kept out of git): the excerpt must track the design doc's revision.
+
+docs/DESIGN.md and docs/DESIGN_EXCERPT.md live only in working copies; in a fresh clone
+this check skips.
+"""
 
 import re
 from pathlib import Path
+
+import pytest
 
 DOCS = Path(__file__).resolve().parents[1] / "docs"
 
@@ -14,4 +20,6 @@ def _revision(name: str) -> tuple[int, str]:
 
 
 def test_excerpt_tracks_design_revision():
+    if not (DOCS / "DESIGN.md").exists():
+        pytest.skip("design notes are local-only")
     assert _revision("DESIGN.md") == _revision("DESIGN_EXCERPT.md")

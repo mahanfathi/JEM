@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Phase 1: the method, its ablations, and the 2022 baseline (docs/DESIGN.md, experiment log E1-E3).
+# Phase 1: the method, its ablations, and the 2022 baseline (experiments E1-E3).
 # Usage: ./experiments/phase1.sh [e1] [e2] [e2b] [e3]      (default: e1 e2 e3)
 # Runs are sequential on purpose: concurrent trainings thrash the GPU (22 vs 29 steps/s
 # aggregate for three factored runs). Runs land in runs/; watch them with `uv run jem dash`.

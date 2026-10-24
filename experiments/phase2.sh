@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Phase 2: options that switch mid-trajectory (docs/DESIGN.md, experiment log E4).
+# Phase 2: options that switch mid-trajectory (experiment E4).
 # Usage: ./experiments/phase2.sh [e4]      (default: all sections). Sequential on purpose.
 set -uo pipefail
 cd "$(dirname "$0")/.."
