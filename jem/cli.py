@@ -1,4 +1,4 @@
-"""Command line: `jem train | eval | table | dash | presets`."""
+"""Command line: `jem train | eval | table | downstream | dash | presets`."""
 
 from __future__ import annotations
 
@@ -43,6 +43,45 @@ def _eval(args) -> None:
             fig.savefig(out / f"{name}.png", dpi=110, bbox_inches="tight")
             plt.close(fig)
         print(f"figures -> {out}")
+
+
+def _downstream(args) -> None:
+    import dataclasses as dc
+
+    import matplotlib.pyplot as plt
+
+    from jem.downstream import DownstreamConfig, evaluate_downstream
+    from jem.figures import downstream_figure
+    from jem.options import OptionLibrary
+    from jem.runlog import RunLog
+
+    run = Path(args.run)
+    lib = OptionLibrary.load(run)
+    cfg = DownstreamConfig(
+        episodes=args.episodes, seed=args.seed, task=args.task, horizon=args.horizon
+    )
+    results = evaluate_downstream(lib, cfg)
+    print("| planner | success | steps to target |\n|---|---|---|")
+    for name, res in results.items():
+        print(f"| {name} | {100 * res['success']:.1f}% | {res['steps_to_target']:.1f} |")
+    step = json.loads((run / "status.json").read_text())["step"]
+    log = RunLog(run)
+    tag = f"{cfg.task}_h{cfg.horizon}"
+    metrics = {}
+    for name, res in results.items():
+        metrics[f"down/{tag}/{name}_success"] = res["success"]
+        metrics[f"down/{tag}/{name}_steps"] = res["steps_to_target"]
+    log.log(step, metrics)
+    log.figure(step, f"downstream_{tag}", fig := downstream_figure(results))
+    plt.close(fig)
+    log.close()
+    summary = {
+        k: {m: v for m, v in r.items() if m in ("success", "steps_to_target")}
+        for k, r in results.items()
+    }
+    (run / f"downstream_{tag}.json").write_text(
+        json.dumps({"config": dc.asdict(cfg), "results": summary}, indent=2)
+    )
 
 
 def _dash(args) -> None:
@@ -110,6 +149,14 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("run", help="run directory")
     p.add_argument("--figures", default=None, help="directory to write figures to")
     p.set_defaults(fn=_eval)
+
+    p = sub.add_parser("downstream", help="obstacle-room MPC with a run's options vs raw actions")
+    p.add_argument("run", help="run directory")
+    p.add_argument("--episodes", type=int, default=64)
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--task", default="circle", choices=["circle", "cup"])
+    p.add_argument("--horizon", type=int, default=20, help="planning horizon (steps)")
+    p.set_defaults(fn=_downstream)
 
     p = sub.add_parser("dash", help="serve the local dashboard")
     p.add_argument("--root", default="runs")

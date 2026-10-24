@@ -44,6 +44,13 @@ class OptionLibrary:
         world = make_world(cfg.env, dev)
         model = build_model(cfg.model, world.obs_dim, world.act_dim).to(dev)
         model.load_state_dict(ckpt["model"])
+        if "library" not in ckpt:  # older checkpoints: rebuild the library by evaluation
+            from jem.evaluate import evaluate
+            from jem.train import build_data
+
+            _, _, val = build_data(cfg, dev)
+            library = evaluate(model, world, val, cfg)["artifacts"]["library"]
+            return cls(model, world, cfg, library, list(world.expert_names))
         return cls(model, world, cfg, ckpt["library"].to(dev), ckpt["names"])
 
     def __getitem__(self, name: str) -> Tensor:

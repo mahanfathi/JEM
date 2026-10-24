@@ -100,7 +100,9 @@ class RunLog:
         folder = self.path / "figures" / name
         folder.mkdir(parents=True, exist_ok=True)
         out = folder / f"{int(step):08d}.png"
-        fig.savefig(out, dpi=110, bbox_inches="tight")
+        tmp = folder / f".{int(step):08d}.png.tmp"
+        fig.savefig(tmp, dpi=110, bbox_inches="tight", format="png")
+        os.replace(tmp, out)  # readers never see a half-written image
         return out
 
     def set_status(self, state: str, step: int, message: str = "") -> None:

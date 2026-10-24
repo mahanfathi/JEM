@@ -298,6 +298,34 @@ def tracking_figure(track: dict, names) -> plt.Figure:
     return fig
 
 
+def downstream_figure(results: dict, episodes: int = 6) -> plt.Figure:
+    """Paths of each planner (columns) on the same obstacle tasks (rows)."""
+    names = list(results)
+    fig, axes = plt.subplots(episodes, len(names), figsize=(1.9 * len(names), 1.9 * episodes))
+    for c, name in enumerate(names):
+        res = results[name]
+        traj, centers, radii = (res[k].cpu() for k in ("traj", "centers", "radii"))
+        for r in range(episodes):
+            ax = axes[r, c]
+            for o in range(centers.shape[1]):
+                ax.add_patch(plt.Circle(centers[r, o].tolist(), radii[r, o].item(), color=GRID))
+            ax.plot(traj[r, :, 0], traj[r, :, 1], color=SERIES[c], lw=1.2)
+            ax.scatter(traj[r, 0, 0], traj[r, 0, 1], s=10, color=INK2, zorder=3)
+            ax.scatter(traj[r, 0, 2], traj[r, 0, 3], marker="*", s=70, color=INK, zorder=3)
+            ax.set_xlim(-1, 1)
+            ax.set_ylim(-1, 1)
+            ax.set_aspect("equal")
+            ax.set_xticks([])
+            ax.set_yticks([])
+            if r == 0:
+                ax.set_title(f"{name}\nsuccess {100 * res['success']:.0f}%", fontsize=8)
+    fig.suptitle(
+        "Downstream: reach ★ around an unseen obstacle (MPC over options vs actions)", fontsize=9
+    )
+    fig.tight_layout()
+    return fig
+
+
 def make_figures(model, world: ParticleWorld, result: dict) -> dict[str, plt.Figure]:
     art = result["artifacts"]
     names = list(world.expert_names)
