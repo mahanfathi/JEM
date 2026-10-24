@@ -98,6 +98,9 @@ class EvalConfig:
     context_lens: tuple[int, ...] = (1, 2, 4, 8, 16)
     rollouts: int = 16
     rollout_len: int = 80
+    track_traj: int = 256  # switching trajectories for online option tracking (0 disables)
+    track_hazard: float = 1 / 16  # per-step switch probability in the tracking test
+    algebra_weights: tuple[float, ...] = (0.25, 0.5, 2.0, 4.0)
     figures: bool = True
 
 
@@ -172,6 +175,7 @@ PRESETS: dict[str, dict[str, Any]] = {
         "eval.context_lens": (1, 4),
         "eval.rollouts": 2,
         "eval.rollout_len": 10,
+        "eval.track_traj": 4,
     },
 }
 

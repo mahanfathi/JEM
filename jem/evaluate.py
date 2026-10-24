@@ -21,7 +21,7 @@ import torch
 from torch import Tensor
 
 from jem.config import Config
-from jem.data import Demos, sample_windows
+from jem.data import Demos, collect, sample_windows
 from jem.envs import ParticleWorld
 from jem.envs.particle import wrap
 from jem.inference import Proposals, infer_option
@@ -86,8 +86,8 @@ def infer_chunked(model, obs: Tensor, act: Tensor, cfg: Config, proposals: Tenso
     return torch.cat(parts)
 
 
-def window_loglik(model, obs, act, zs, proposals: Proposals, gen) -> Tensor:
-    """sum_t log p(a_t | s_t, z_k) for every window and option: (W, N, ·), (P, d) -> (W, P)."""
+def step_loglik(model, obs, act, zs, proposals: Proposals, gen) -> Tensor:
+    """log p(a_t | s_t, z_k) for every step and option: (W, N, ·), (P, d) -> (W, N, P)."""
     w, n, _ = obs.shape
     props = proposals.sample(gen)
     cand = torch.cat([act.unsqueeze(-2), props.expand(w, n, *props.shape)], dim=-2)
@@ -97,7 +97,25 @@ def window_loglik(model, obs, act, zs, proposals: Proposals, gen) -> Tensor:
     for i in range(0, w * n, per):
         u = option_logits(model, flat_obs[i : i + per], zs, flat_cand[i : i + per])
         out.append(log_prob(u[..., 0], u[..., 1:], proposals.log_volume))
-    return torch.cat(out).reshape(w, n, -1).sum(1)
+    return torch.cat(out).reshape(w, n, -1)
+
+
+def hmm_filter(loglik: Tensor, hazard: float) -> Tensor:
+    """Online option posterior under a switching prior; loglik (B, T, K) -> beliefs (B, T, K).
+
+    The active option persists with probability 1 - hazard per step and otherwise
+    jumps to one of the other K - 1 options uniformly.
+    """
+    k = loglik.shape[-1]
+    stay = torch.full((k, k), hazard / (k - 1), device=loglik.device).fill_diagonal_(1 - hazard)
+    log_trans = stay.log()
+    log_b = loglik[:, 0] - loglik[:, 0].logsumexp(-1, keepdim=True)
+    beliefs = [log_b]
+    for t in range(1, loglik.shape[1]):
+        log_b = (log_b[:, :, None] + log_trans).logsumexp(1) + loglik[:, t]
+        log_b = log_b - log_b.logsumexp(-1, keepdim=True)
+        beliefs.append(log_b)
+    return torch.stack(beliefs, 1).exp()
 
 
 # ----------------------------------------------------------------------------- clustering
@@ -155,15 +173,20 @@ def match(assign: Tensor, labels: Tensor, k: int) -> list[int]:
 
 
 @torch.no_grad()
-def rollout(model, world: ParticleWorld, zs: Tensor, start: Tensor, steps: int, proposals, gen):
-    """Sample a ~ p(a|s) ∝ exp(sum_p logits(s, z_p, a)) by importance resampling.
+def rollout(
+    model, world: ParticleWorld, zs: Tensor, start: Tensor, steps: int, proposals, gen, weights=None
+):
+    """Sample a ~ p(a|s) ∝ exp(sum_p w_p logits(s, z_p, a)) by importance resampling.
 
-    zs (P, d) are composed by summing energies. Returns obs (R, T+1, ds), act (R, T, da).
+    zs (P, d) are composed by a weighted sum of energies (weights default to 1).
+    Returns obs (R, T+1, ds), act (R, T, da).
     """
+    w = torch.ones(len(zs), device=zs.device) if weights is None else torch.as_tensor(weights)
+    w = w.to(zs.device, zs.dtype)[None, :, None]
     obs, traj, acts = start, [start], []
     for _ in range(steps):
         props = proposals.sample(gen)
-        u = option_logits(model, obs, zs, props[None]).sum(1)  # (R, M)
+        u = (w * option_logits(model, obs, zs, props[None])).sum(1)  # (R, M)
         a = props[torch.multinomial(u.softmax(-1), 1, generator=gen).squeeze(-1)]
         obs = world.step(obs, a)
         traj.append(obs)
@@ -221,7 +244,7 @@ def evaluate(model, world: ParticleWorld, demos: Demos, cfg: Config, seed: int =
     for n in ec.context_lens:
         w = sample_windows(demos, ec.windows, n, gen)
         truth = w.expert.mode(dim=1).values
-        ll = window_loglik(model, w.obs, w.act, library, ctx_props, gen)
+        ll = step_loglik(model, w.obs, w.act, library, ctx_props, gen).sum(1)
         recog[n] = (ll.argmax(-1) == truth).float().mean().item()
         # Ceiling: the same rule with the true expert densities.
         experts = torch.arange(k, device=device).expand(*w.expert.shape, k)
@@ -275,6 +298,36 @@ def evaluate(model, world: ParticleWorld, demos: Demos, cfg: Config, seed: int =
     if antipodal_cos:
         metrics["eval/antipodal_cos"] = torch.stack(antipodal_cos).mean().item()
 
+    # Behaviour algebra: z_i + w z_j should steer atan(w) off expert i's heading ------------
+    if adjacent:
+        i, j = adjacent[0]
+        dir_i = world.expert_mean_dir(states, torch.full((len(states),), i, device=device))
+        algebra = {}
+        for wgt in ec.algebra_weights:
+            m = mean_action(u_all[:, i] + wgt * u_all[:, j], props)
+            algebra[wgt] = angle_deg(m, dir_i).mean().item()
+        target = {wgt: math.degrees(math.atan(wgt)) for wgt in ec.algebra_weights}
+        metrics["eval/algebra_err_deg"] = sum(
+            abs(algebra[wgt] - target[wgt]) for wgt in algebra
+        ) / len(algebra)
+
+    # Tracking: options that switch mid-trajectory, filtered online over the library -----
+    track = {}
+    if ec.track_traj > 0:
+        switching = collect(world, ec.track_traj, demos.obs.shape[1], gen, ec.track_hazard)
+        ll = step_loglik(model, switching.obs, switching.act, library, ctx_props, gen)
+        experts = torch.arange(k, device=device).expand(*switching.expert.shape, k)
+        true_ll = world.expert_log_prob(
+            switching.obs[..., None, :], experts, switching.act[..., None, :]
+        )
+        belief = hmm_filter(ll, ec.track_hazard)
+        bayes_belief = hmm_filter(true_ll, ec.track_hazard)
+        metrics["eval/track_acc"] = (belief.argmax(-1) == switching.expert).float().mean().item()
+        metrics["eval/track_acc_bayes"] = (
+            (bayes_belief.argmax(-1) == switching.expert).float().mean().item()
+        )
+        track = {"expert": switching.expert[0], "belief": belief[0], "bayes": bayes_belief[0]}
+
     # Rollouts --------------------------------------------------------------------------
     sir = Proposals(world.act_dim, world.act_low, world.act_high, 1024, device, seed=17)
     start = world.reset(ec.rollouts, gen)
@@ -303,6 +356,7 @@ def evaluate(model, world: ParticleWorld, demos: Demos, cfg: Config, seed: int =
             "library": library,
             "recog": recog,
             "recog_bayes": bayes,
+            "track": track,
             "rollouts": rollouts,
             "start": start,
             "adjacent": adjacent,

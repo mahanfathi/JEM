@@ -17,7 +17,8 @@ import torch  # noqa: E402
 from matplotlib.colors import LinearSegmentedColormap  # noqa: E402
 
 from jem.envs import ParticleWorld  # noqa: E402
-from jem.evaluate import option_logits  # noqa: E402
+from jem.evaluate import option_logits, rollout  # noqa: E402
+from jem.inference import Proposals  # noqa: E402
 
 SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
 MARKERS = ["o", "s", "^", "D", "v", "P", "X", "*"]
@@ -239,15 +240,81 @@ def recognition_figure(recog: dict, bayes: dict, num_experts: int) -> plt.Figure
     return fig
 
 
+def algebra_figure(model, world: ParticleWorld, library, names, pair) -> plt.Figure:
+    """Rollouts of z_i + w z_j: the heading should turn by atan(w) away from expert i."""
+    i, j = pair
+    weights = (0.0, 0.25, 0.5, 1.0, 2.0, 4.0)
+    gen = torch.Generator(device=library.device).manual_seed(5)
+    angles = torch.linspace(0, 2 * math.pi, 7, device=library.device)[:-1] + 0.3
+    start = torch.stack(
+        [0.9 * angles.cos(), 0.9 * angles.sin(), 0 * angles, 0 * angles], -1
+    )  # agents on a ring, target at the origin
+    sir = Proposals(world.act_dim, world.act_low, world.act_high, 1024, library.device, seed=19)
+    fig, axes = plt.subplots(1, len(weights) + 1, figsize=(1.9 * (len(weights) + 1), 2.3))
+    panels = [(f"w={w:g}", [1.0, w]) for w in weights] + [(names[j] + " only", [0.0, 1.0])]
+    for ax, (title, wts) in zip(axes, panels, strict=True):
+        traj, _ = rollout(model, world, library[[i, j]], start, 60, sir, gen, weights=wts)
+        xy = traj[..., :2].cpu()
+        for r in range(xy.shape[0]):
+            ax.plot(xy[r, :, 0], xy[r, :, 1], color=SERIES[0], lw=1.0, alpha=0.8)
+            ax.scatter(xy[r, 0, 0], xy[r, 0, 1], s=8, color=SERIES[0], lw=0)
+        ax.scatter([0], [0], marker="*", s=80, color=INK, zorder=3)
+        ax.set_xlim(-1.05, 1.05)
+        ax.set_ylim(-1.05, 1.05)
+        ax.set_aspect("equal")
+        ax.set_xticks([])
+        ax.set_yticks([])
+        if title.startswith("w="):
+            title += f"  ({math.degrees(math.atan(float(title[2:]))):.0f}°)"
+        ax.set_title(title, fontsize=8)
+    fig.suptitle(
+        f"Behaviour algebra: z_{names[i]} + w·z_{names[j]}  (ideal heading offset atan w)",
+        fontsize=9,
+    )
+    fig.tight_layout()
+    return fig
+
+
+def tracking_figure(track: dict, names) -> plt.Figure:
+    expert, belief, bayes = (track[k].cpu() for k in ("expert", "belief", "bayes"))
+    t = torch.arange(len(expert))
+    fig, axes = plt.subplots(
+        3, 1, figsize=(6.4, 3.4), sharex=True, gridspec_kw={"height_ratios": [0.35, 1, 1]}
+    )
+    axes[0].bar(t, 1.0, width=1.0, color=[SERIES[e] for e in expert.tolist()], lw=0)
+    axes[0].set_ylim(0, 1)
+    axes[0].set_yticks([])
+    axes[0].set_ylabel("true", rotation=0, ha="right", va="center")
+    for ax, b, label in ((axes[1], belief, "model"), (axes[2], bayes, "Bayes")):
+        ax.stackplot(t, b.T, colors=SERIES[: len(names)], labels=names, step="mid", lw=0)
+        ax.set_ylim(0, 1)
+        ax.set_ylabel(label, rotation=0, ha="right", va="center")
+    axes[1].legend(loc="upper left", bbox_to_anchor=(1.0, 1.0), fontsize=7)
+    axes[2].set_xlabel("time step")
+    fig.suptitle(
+        "Online option tracking under hidden switches (HMM filter over the library)", fontsize=9
+    )
+    fig.tight_layout()
+    return fig
+
+
 def make_figures(model, world: ParticleWorld, result: dict) -> dict[str, plt.Figure]:
     art = result["artifacts"]
     names = list(world.expert_names)
-    pairs = art["adjacent"] + art["antipodal"]
     with torch.no_grad():
-        return {
+        figs = {
             "options": options_figure(art["z"], art["labels"], art["library"], names),
             "policies": policies_figure(model, world, art["library"], names),
-            "compositions": compositions_figure(model, world, art["library"], names, pairs),
+            "compositions": compositions_figure(
+                model, world, art["library"], names, art["adjacent"] + art["antipodal"]
+            ),
             "rollouts": rollouts_figure(art["rollouts"], names),
-            "recognition": recognition_figure(art["recog"], art["recog_bayes"], world.num_experts),
+            "recognition": recognition_figure(art["recog"], art["recog_bayes"], len(names)),
         }
+        if art["adjacent"]:
+            figs["algebra"] = algebra_figure(
+                model, world, art["library"], names, art["adjacent"][0]
+            )
+        if art["track"]:
+            figs["tracking"] = tracking_figure(art["track"], names)
+    return figs
