@@ -264,11 +264,11 @@ def algebra_figure(model, world: ParticleWorld, library, names, pair) -> plt.Fig
         ax.set_aspect("equal")
         ax.set_xticks([])
         ax.set_yticks([])
-        if title.startswith("w="):
-            title += f"  ({math.degrees(math.atan(float(title[2:]))):.0f}°)"
+        if title.startswith("w="):  # product of Gaussian-heading experts: 90° w / (1 + w)
+            title += f"  ({90 * float(title[2:]) / (1 + float(title[2:])):.0f}°)"
         ax.set_title(title, fontsize=8)
     fig.suptitle(
-        f"Behaviour algebra: z_{names[i]} + w·z_{names[j]}  (ideal heading offset atan w)",
+        f"Behaviour algebra: z_{names[i]} + w·z_{names[j]}  (true product turns 90°·w/(1+w))",
         fontsize=9,
     )
     fig.tight_layout()

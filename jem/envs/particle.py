@@ -4,7 +4,7 @@ State  s = (agent_xy, target_xy) in R^4.  Action a in [-1, 1]^2 is a velocity:
 agent <- clip(agent + dt * a, -arena, arena); the target never moves.
 
 Each expert k steers at a fixed angle theta_k relative to the bearing to the target
-(toward: 0, ccw orbit: +pi/2, away: pi, cw orbit: -pi/2), with Gaussian heading noise
+(toward: 0, cw orbit: +pi/2, away: pi, ccw orbit: -pi/2), with Gaussian heading noise
 of std `angle_std` and speed ~ U[speed_min, speed_max]. The noise makes a single
 transition ambiguous, so recognising an expert needs evidence from several steps.
 Because the expert densities are known in closed form, models can be scored by the
@@ -20,7 +20,8 @@ from torch import Tensor
 
 from jem.config import EnvConfig
 
-EXPERT_ANGLES = {"toward": 0.0, "ccw": math.pi / 2, "away": math.pi, "cw": -math.pi / 2}
+# Steering +90 degrees off the bearing to the target circles it clockwise.
+EXPERT_ANGLES = {"toward": 0.0, "cw": math.pi / 2, "away": math.pi, "ccw": -math.pi / 2}
 
 
 def wrap(angle: Tensor) -> Tensor:
@@ -94,7 +95,8 @@ class ParticleWorld:
         log_heading = torch.logsumexp(
             -((delta[..., None] + wraps) ** 2) / (2 * var), dim=-1
         ) - 0.5 * math.log(2 * math.pi * var)
-        inside = (speed >= cfg.speed_min) & (speed <= cfg.speed_max)
+        # Relative slack: a sampled speed of exactly speed_min can round below it in fp32.
+        inside = (speed >= cfg.speed_min * (1 - 1e-6)) & (speed <= cfg.speed_max * (1 + 1e-6))
         log_speed = torch.where(
             inside,
             torch.full_like(speed, -math.log(cfg.speed_max - cfg.speed_min)),

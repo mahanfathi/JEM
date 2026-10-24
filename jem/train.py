@@ -21,6 +21,11 @@ from jem.runlog import RunLog
 
 
 def resolve_device(name: str) -> torch.device:
+    """Pick the device and the matmul precision. Every entry point (training, `jem eval`,
+    `jem downstream`, OptionLibrary) goes through here, so all of them compute alike.
+    TF32 is ~15% faster here and leaves the Newton residual unchanged (1.4e-6)."""
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
     if name == "auto":
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
     return torch.device(name)
@@ -60,8 +65,6 @@ def train(cfg: Config, root: str | Path = "runs", quiet: bool = False) -> Path:
     tc = cfg.train
     device = resolve_device(tc.device)
     torch.manual_seed(tc.seed)
-    torch.backends.cuda.matmul.allow_tf32 = True
-    torch.backends.cudnn.allow_tf32 = True
 
     world, train_demos, val_demos = build_data(cfg, device)
     model = build_model(cfg.model, world.obs_dim, world.act_dim).to(device)

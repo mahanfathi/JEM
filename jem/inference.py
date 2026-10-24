@@ -92,7 +92,11 @@ def newton_solve(
         g, pi, mean = _grad(z, U, prec, w)
         delta = torch.linalg.solve(_hessian(pi, mean, U, prec, w), g)
         cand = z[:, None] - steps[None, :, None] * delta[:, None]
-        z = cand[rows, option_objective(cand, U, prec, w).argmin(-1)]
+        f = option_objective(cand, U, prec, w)
+        # Largest step whose objective is within rounding noise of the best one. Near the
+        # optimum every candidate ties and a strict argmin would freeze on the zero step.
+        tol = 1e-6 * f[:, -1:].abs() + 1e-12
+        z = cand[rows, (f <= f.min(-1, keepdim=True).values + tol).float().argmax(-1)]
     return z, _grad(z, U, prec, w)[0].norm(dim=-1)
 
 

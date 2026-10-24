@@ -135,3 +135,52 @@ def test_weighted_implicit_gradient_matches_finite_differences():
     zm, _ = newton_solve((0.4 - eps) * U0 + U1, 1.0, 30, w)
     fd = ((v * zp).sum() - (v * zm).sum()) / (2 * eps)
     assert torch.allclose(grad, fd, rtol=2e-4, atol=1e-7)
+
+
+def test_fair_snippets_give_the_analytic_bayes_rate():
+    # One step, four experts 90 degrees apart, Gaussian heading noise 0.5: Bayes accuracy is
+    # P(|noise| < 45°) = 2 Phi(pi/2) - 1 = 0.8838 when the state carries no label information.
+    from jem.data import collect
+    from jem.evaluate import fair_snippets
+
+    world = make_world(make_config("jem").env)
+    gen = torch.Generator().manual_seed(0)
+    demos = collect(world, 256, 32, gen)
+    w = fair_snippets(world, demos, 40000, 1, gen)
+    experts = torch.arange(4).expand(*w.expert.shape, 4)
+    ll = world.expert_log_prob(w.obs[..., None, :], experts, w.act[..., None, :]).sum(1)
+    acc = (ll.argmax(-1) == w.expert[:, 0]).float().mean().item()
+    assert abs(acc - (2 * 0.5 * (1 + math.erf(math.pi / 2 / math.sqrt(2))) - 1)) < 0.01
+
+
+def test_true_product_of_experts_reference():
+    # The weighted product of Gaussian-heading experts 90° apart turns 90° w / (1 + w).
+    from jem.evaluate import angle_deg, mean_action, true_logits
+    from jem.inference import Proposals
+
+    world = make_world(make_config("jem").env)
+    gen = torch.Generator().manual_seed(1)
+    states = world.reset(256, gen)
+    props = Proposals(2, -1, 1, 16384, "cpu", 3).sample(gen)
+    t = true_logits(world, states, props)
+    i, j = world.expert_names.index("toward"), world.expert_names.index("cw")
+    dir_i = world.expert_mean_dir(states, torch.full((256,), i))
+    for w in (0.25, 0.5, 2.0, 4.0):
+        turn = angle_deg(mean_action(t[:, i] + w * t[:, j], props), dir_i).mean().item()
+        assert abs(turn - 90 * w / (1 + w)) < 1.0, (w, turn)
+
+
+def test_support_edge_is_finite_in_fp32():
+    world = make_world(make_config("jem").env)
+    obs = torch.tensor([[0.3, -0.2, -0.1, 0.25]]).expand(360, 4)
+    angles = torch.linspace(-math.pi, math.pi, 360)
+    act = 0.5 * torch.stack([angles.cos(), angles.sin()], -1)  # speed exactly speed_min
+    assert torch.isfinite(world.expert_log_prob(obs, torch.zeros(360, dtype=torch.long), act)).all()
+
+
+def test_cw_orbits_clockwise():
+    world = make_world(make_config("jem").env)
+    obs = torch.tensor([[1.0, 0.0, 0.0, 0.0]])  # agent at (1, 0), target at the origin
+    for name, sign in (("cw", -1), ("ccw", 1)):
+        v = world.expert_mean_dir(obs, torch.tensor([world.expert_names.index(name)]))[0]
+        assert math.copysign(1, v[1].item()) == sign  # angular momentum x*vy - y*vx

@@ -54,16 +54,19 @@ def make_tasks(
     theta = torch.rand(n, generator=gen, device=device) * 2 * math.pi
     unit = torch.stack([theta.cos(), theta.sin()], -1)
     jitter = 0.1 * (torch.rand(n, 2, generator=gen, device=device) - 0.5)
+    # Targets stay inside the training range (|x|, |y| <= 0.5).
     if kind == "circle":
-        target, start = 0.55 * unit, -0.75 * unit + jitter
+        target, start = 0.5 * unit, -0.75 * unit + jitter
         centers = 0.5 * (start + target) + 0.5 * jitter.flip(-1)
         radii = 0.25 + 0.1 * torch.rand(n, 1, generator=gen, device=device)
         return torch.cat([start, target], -1), centers[:, None], radii
     if kind == "cup":
-        target, start = 0.6 * unit, -0.7 * unit + jitter
+        # Nine discs (r = 0.1) on an arc; the wall is >= 0.083 thick at its thinnest, more
+        # than the largest step dt * sqrt(2) = 0.071, so nothing tunnels through.
+        target, start = 0.5 * unit, -0.8 * unit + jitter
         phi = theta[:, None] + torch.deg2rad(torch.linspace(-80, 80, 9, device=device))
-        centers = 0.05 * unit[:, None] + 0.32 * torch.stack([phi.cos(), phi.sin()], -1)
-        return torch.cat([start, target], -1), centers, torch.full((n, 9), 0.09, device=device)
+        centers = -0.1 * unit[:, None] + 0.32 * torch.stack([phi.cos(), phi.sin()], -1)
+        return torch.cat([start, target], -1), centers, torch.full((n, 9), 0.1, device=device)
     raise KeyError(f"unknown task kind {kind!r}")
 
 

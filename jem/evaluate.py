@@ -21,7 +21,7 @@ import torch
 from torch import Tensor
 
 from jem.config import Config
-from jem.data import Demos, collect, sample_windows
+from jem.data import Demos, Window, collect, sample_windows
 from jem.envs import ParticleWorld
 from jem.envs.particle import wrap
 from jem.inference import Proposals, infer_option
@@ -116,6 +116,31 @@ def hmm_filter(loglik: Tensor, hazard: float) -> Tensor:
         log_b = log_b - log_b.logsumexp(-1, keepdim=True)
         beliefs.append(log_b)
     return torch.stack(beliefs, 1).exp()
+
+
+def fair_snippets(world: ParticleWorld, demos: Demos, n: int, length: int, gen) -> Window:
+    """Recognition test data: start states pooled over all demos, labels drawn uniformly,
+    then that expert rolled out. The start state carries no information about the label,
+    so the rule argmax_k sum_t log p_k(a_t | s_t) with true densities is Bayes-optimal.
+    (Windows cut from demos would leak the label through where each expert tends to be.)
+    """
+    flat = demos.obs.reshape(-1, demos.obs.shape[-1])
+    obs = flat[torch.randint(len(flat), (n,), generator=gen, device=flat.device)]
+    expert = torch.randint(world.num_experts, (n,), generator=gen, device=flat.device)
+    obs_t, act_t = [], []
+    for _ in range(length):
+        act = world.expert_act(obs, expert, gen)
+        obs_t.append(obs)
+        act_t.append(act)
+        obs = world.step(obs, act)
+    return Window(torch.stack(obs_t, 1), torch.stack(act_t, 1), expert[:, None].expand(n, length))
+
+
+def true_logits(world: ParticleWorld, states: Tensor, props: Tensor) -> Tensor:
+    """log p_k(a | s) of every true expert over shared actions: (S, ds), (M, da) -> (S, K, M)."""
+    k = world.num_experts
+    experts = torch.arange(k, device=states.device).expand(len(states), k)[..., None]
+    return world.expert_log_prob(states[:, None, None, :], experts, props[None, None])
 
 
 # ----------------------------------------------------------------------------- clustering
@@ -242,11 +267,11 @@ def evaluate(model, world: ParticleWorld, demos: Demos, cfg: Config, seed: int =
     # Recognition by energy -------------------------------------------------------------
     recog, bayes = {}, {}
     for n in ec.context_lens:
-        w = sample_windows(demos, ec.windows, n, gen)
-        truth = w.expert.mode(dim=1).values
+        w = fair_snippets(world, demos, ec.windows, n, gen)
+        truth = w.expert[:, 0]
         ll = step_loglik(model, w.obs, w.act, library, ctx_props, gen).sum(1)
         recog[n] = (ll.argmax(-1) == truth).float().mean().item()
-        # Ceiling: the same rule with the true expert densities.
+        # The same rule with the true densities. On fair snippets this is Bayes-optimal.
         experts = torch.arange(k, device=device).expand(*w.expert.shape, k)
         true_ll = world.expert_log_prob(w.obs[..., None, :], experts, w.act[..., None, :]).sum(1)
         bayes[n] = (true_ll.argmax(-1) == truth).float().mean().item()
@@ -276,12 +301,15 @@ def evaluate(model, world: ParticleWorld, demos: Demos, cfg: Config, seed: int =
     metrics["eval/heading_err_deg"] = torch.stack(heading).mean().item()
 
     # Composition -----------------------------------------------------------------------
+    # References are the true products of experts, pushed through the same estimator.
     adjacent, antipodal = expert_pairs(world)
     u_all = option_logits_chunked(model, states, library, props[None])  # (S, K, M)
+    t_all = true_logits(world, states, props)  # (S, K, M)
     comp_err, cancel, antipodal_cos = [], [], []
     for i, j in adjacent:
         m = mean_action(u_all[:, i] + u_all[:, j], props)
-        comp_err.append(angle_deg(m, world.ideal_composition_dir(states, i, j)).mean())
+        ref = mean_action(t_all[:, i] + t_all[:, j], props)
+        comp_err.append(angle_deg(m, ref).mean())
     unit = props / props.norm(dim=-1, keepdim=True).clamp_min(1e-6)
     for i, j in antipodal:
         cancel.append(mean_action(u_all[:, i] + u_all[:, j], unit).norm(dim=-1).mean())
@@ -298,18 +326,15 @@ def evaluate(model, world: ParticleWorld, demos: Demos, cfg: Config, seed: int =
     if antipodal_cos:
         metrics["eval/antipodal_cos"] = torch.stack(antipodal_cos).mean().item()
 
-    # Behaviour algebra: z_i + w z_j should steer atan(w) off expert i's heading ------------
+    # Behaviour algebra: z_i + w z_j against the weighted product of the true experts ----
     if adjacent:
         i, j = adjacent[0]
-        dir_i = world.expert_mean_dir(states, torch.full((len(states),), i, device=device))
-        algebra = {}
+        errs = []
         for wgt in ec.algebra_weights:
             m = mean_action(u_all[:, i] + wgt * u_all[:, j], props)
-            algebra[wgt] = angle_deg(m, dir_i).mean().item()
-        target = {wgt: math.degrees(math.atan(wgt)) for wgt in ec.algebra_weights}
-        metrics["eval/algebra_err_deg"] = sum(
-            abs(algebra[wgt] - target[wgt]) for wgt in algebra
-        ) / len(algebra)
+            ref = mean_action(t_all[:, i] + wgt * t_all[:, j], props)
+            errs.append(angle_deg(m, ref).mean())
+        metrics["eval/algebra_err_deg"] = torch.stack(errs).mean().item()
 
     # Tracking: options that switch mid-trajectory, filtered online over the library -----
     track = {}

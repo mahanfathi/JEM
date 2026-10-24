@@ -53,7 +53,7 @@ class ModelConfig:
 class InferConfig:
     method: str = "newton"  # newton (linear only) | langevin | gd
     prior_std: float = 1.0  # z ~ N(0, prior_std^2 I)
-    iters: int = 10  # newton iterations or langevin/gd steps
+    iters: int = 8  # newton iterations (fp32 floor by ~6) or langevin/gd steps
     implicit_grad: bool = True  # newton: exact IFT gradient through z*; False = EM-style
     step_size: float = 5e-3  # langevin/gd: z <- z - step/2 dE/dz (+ sqrt(step) noise)
     grad_clip: float = 10.0  # langevin/gd: per-coordinate clip on dE/dz, 0 disables
