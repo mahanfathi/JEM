@@ -21,7 +21,7 @@ def _eval(args) -> None:
     import matplotlib.pyplot as plt
     import torch
 
-    from jem.config import from_dict
+    from jem.config import _set, from_dict
     from jem.energy import build_model
     from jem.evaluate import evaluate
     from jem.figures import make_figures
@@ -30,6 +30,9 @@ def _eval(args) -> None:
     run = Path(args.run)
     ckpt = torch.load(run / "checkpoints" / "last.pt", map_location="cpu", weights_only=False)
     cfg = from_dict(ckpt["config"])
+    for item in args.set or []:  # e.g. env.switch_prob=0 to score on non-switching demos
+        key, _, value = item.partition("=")
+        _set(cfg, key.strip(), value.strip())
     device = resolve_device(cfg.train.device)
     world, _, val = build_data(cfg, device)
     model = build_model(cfg.model, world.obs_dim, world.act_dim).to(device)
@@ -161,6 +164,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument(
         "--log", action="store_true", help="append the metrics to the run's metrics.jsonl"
     )
+    p.add_argument("--set", nargs="*", metavar="KEY=VALUE", help="config overrides for evaluation")
     p.set_defaults(fn=_eval)
 
     p = sub.add_parser("downstream", help="obstacle-room MPC with a run's options vs raw actions")
