@@ -209,31 +209,22 @@ def rollouts_figure(rollouts: dict, names) -> plt.Figure:
 def recognition_figure(recog: dict, bayes: dict, num_experts: int) -> plt.Figure:
     ns = sorted(recog)
     fig, ax = plt.subplots(figsize=(3.8, 2.8))
-    ax.plot(ns, [bayes[n] for n in ns], color=MUTED, lw=1.2, marker="o", ms=3)
-    ax.plot(ns, [recog[n] for n in ns], color=SERIES[0], marker="o", ms=5)
-    ax.annotate(
-        "model", (ns[0], recog[ns[0]]), xytext=(4, -12), textcoords="offset points", color=INK2
-    )
-    ax.annotate(
-        "Bayes (true densities)",
-        (ns[0], bayes[ns[0]]),
-        xytext=(4, 6),
-        textcoords="offset points",
+    ax.plot(
+        ns,
+        [bayes[n] for n in ns],
         color=MUTED,
+        lw=1.2,
+        marker="o",
+        ms=3,
+        label="Bayes (true densities)",
     )
-    ax.axhline(1 / num_experts, color=MUTED, lw=1, ls="--")
-    ax.annotate(
-        "chance",
-        (ns[-1], 1 / num_experts),
-        xytext=(0, 4),
-        textcoords="offset points",
-        ha="right",
-        color=MUTED,
-    )
+    ax.plot(ns, [recog[n] for n in ns], color=SERIES[0], marker="o", ms=5, label="model")
+    ax.axhline(1 / num_experts, color=MUTED, lw=1, ls="--", label="chance")
     ax.set_xscale("log", base=2)
     ax.set_xticks(ns, [str(n) for n in ns])
     ax.set_ylim(0, 1.02)
     ax.grid(axis="y", color=GRID, lw=0.6)
+    ax.legend(loc="center right", fontsize=7)
     ax.set_xlabel("context length N (steps)")
     ax.set_ylabel("accuracy")
     ax.set_title("Option recognition by energy: argmax_k Σ_t log p(a_t|s_t,z_k)")
