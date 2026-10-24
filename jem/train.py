@@ -53,7 +53,7 @@ def run_eval(model, world, val, cfg: Config, run: RunLog, step: int) -> dict:
         for name, fig in make_figures(model, world, result).items():
             run.figure(step, name, fig)
             plt.close(fig)
-    return result["metrics"]
+    return result
 
 
 def train(cfg: Config, root: str | Path = "runs", quiet: bool = False) -> Path:
@@ -114,11 +114,19 @@ def train(cfg: Config, root: str | Path = "runs", quiet: bool = False) -> Path:
                 run.set_status("running", step)
 
             if step % tc.eval_every == 0 or step == tc.steps:
-                metrics = run_eval(model, world, val_demos, cfg, run, step)
+                result = run_eval(model, world, val_demos, cfg, run, step)
+                metrics = result["metrics"]
                 headline = {k: round(v, 3) for k, v in metrics.items() if k.count("@") == 0}
                 say(f"[jem] eval {step}: {headline}")
                 run.save_checkpoint(
-                    {"model": model.state_dict(), "config": cfg.to_dict(), "step": step}
+                    {
+                        "model": model.state_dict(),
+                        "config": cfg.to_dict(),
+                        "step": step,
+                        # Discovered options; names are attached post hoc by evaluation.
+                        "library": result["artifacts"]["library"].cpu(),
+                        "names": list(world.expert_names),
+                    }
                 )
     except Exception as exc:  # keep a record of the failure in the run directory
         run.set_status("failed", step, f"{type(exc).__name__}: {exc}")
