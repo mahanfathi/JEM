@@ -36,6 +36,16 @@ def _eval(args) -> None:
     model.load_state_dict(ckpt["model"])
     result = evaluate(model, world, val, cfg)
     print(json.dumps(result["metrics"], indent=2))
+    if args.log:  # append to the run's own record, at the checkpoint's step
+        from jem.runlog import RunLog
+
+        log = RunLog(run)
+        log.log(ckpt["step"], result["metrics"])
+        log.close()
+        if "library" not in ckpt:  # backfill checkpoints that predate the stored library
+            ckpt["library"] = result["artifacts"]["library"].cpu()
+            ckpt["names"] = list(world.expert_names)
+            log.save_checkpoint(ckpt)
     if args.figures:
         out = Path(args.figures)
         out.mkdir(parents=True, exist_ok=True)
@@ -148,6 +158,9 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("eval", help="re-evaluate a run's last checkpoint")
     p.add_argument("run", help="run directory")
     p.add_argument("--figures", default=None, help="directory to write figures to")
+    p.add_argument(
+        "--log", action="store_true", help="append the metrics to the run's metrics.jsonl"
+    )
     p.set_defaults(fn=_eval)
 
     p = sub.add_parser("downstream", help="obstacle-room MPC with a run's options vs raw actions")
