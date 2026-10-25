@@ -75,7 +75,7 @@ energy linear in the option:
 ```math
 E_\theta(s, z, a) \;=\; -\beta \,\big\langle z,\; \phi_\theta(s, a) \big\rangle,
 \qquad \lVert \phi_\theta(s,a) \rVert_2 = 1 .
-\tag{1}
+\qquad\text{(1)}
 ```
 
 Then $`\pi_\theta(a \mid s, z) \propto \exp(-E_\theta)`$ is an exponential family over
@@ -127,7 +127,7 @@ may also switch within a trajectory.
   and sequences.
 
 **Notation.** $`\langle\cdot,\cdot\rangle`$ is the Euclidean inner product. $`\mathrm{sg}(\cdot)`$
-is the stop-gradient operator. $`\operatorname{softmax}_k`$ normalizes over an index $`k`$.
+is the stop-gradient operator. $`\mathrm{softmax}_k`$ normalizes over an index $`k`$.
 $`\Lambda_\theta(s,z)`$ is a log-partition function.
 
 ---
@@ -142,7 +142,7 @@ With the energy (1), the option policy and its log-partition function are
 \pi_\theta(a \mid s, z) = \exp\!\big(\beta \langle z, \phi_\theta(s,a)\rangle - \Lambda_\theta(s,z)\big),
 \qquad
 \Lambda_\theta(s,z) = \log \int_{\mathcal{A}} \exp\!\big(\beta \langle z, \phi_\theta(s,a)\rangle\big)\, da .
-\tag{2}
+\qquad\text{(2)}
 ```
 
 There is deliberately no option-independent base energy. The option $`z = 0`$ is the
@@ -154,7 +154,7 @@ $`w_1, \dots, w_n`$,
 
 ```math
 \prod_{i} \pi_\theta(a \mid s, z_i)^{\,w_i} \;\propto\; \pi_\theta\Big(a \;\Big|\; s, \textstyle\sum_i w_i z_i\Big).
-\tag{3}
+\qquad\text{(3)}
 ```
 
 The product of experts of two options is the option $`z_1 + z_2`$. A weight acts as a
@@ -167,7 +167,7 @@ negative log-posterior
 
 ```math
 F_C(z) \;=\; \sum_{t=1}^{N} \Big[\Lambda_\theta(s_t, z) - \beta \langle z, \phi_\theta(s_t, a_t)\rangle\Big] + \frac{\lVert z \rVert^2}{2\sigma^2}
-\tag{4}
+\qquad\text{(4)}
 ```
 
 is $`\sigma^{-2}`$-strongly convex, with
@@ -175,9 +175,9 @@ is $`\sigma^{-2}`$-strongly convex, with
 ```math
 \begin{aligned}
 \nabla F_C(z) &= \sum_{t} \Big(\mathbb{E}_{\pi_\theta(\cdot\mid s_t, z)}\big[\beta\phi_\theta(s_t,\cdot)\big] - \beta\phi_\theta(s_t,a_t)\Big) + \frac{z}{\sigma^2},\\
-\nabla^2 F_C(z) &= \sum_{t} \operatorname{Cov}_{\pi_\theta(\cdot\mid s_t, z)}\big[\beta\phi_\theta(s_t,\cdot)\big] + \frac{I}{\sigma^2}.
+\nabla^2 F_C(z) &= \sum_{t} \mathrm{Cov}_{\pi_\theta(\cdot\mid s_t, z)}\big[\beta\phi_\theta(s_t,\cdot)\big] + \frac{I}{\sigma^2}.
 \end{aligned}
-\tag{5}
+\qquad\text{(5)}
 ```
 
 So the recognized option $`\hat z(C) = \arg\min_z F_C(z)`$ exists and is unique. The
@@ -190,7 +190,7 @@ time.
 
 ```math
 \sup_{a}\, \log \pi_\theta(a \mid s,z) \;-\; \inf_{a}\, \log \pi_\theta(a \mid s,z) \;\le\; 2\beta \lVert z \rVert .
-\tag{6}
+\qquad\text{(6)}
 ```
 
 The sharpness of every policy is controlled by the option's norm, which the prior
@@ -208,20 +208,20 @@ the scaled candidate features
 ```math
 U_{tk} = \beta\,\phi_\theta(s_t, a_{tk}) \in \mathbb{R}^d,
 \qquad a_{t0} = a_t,\quad a_{tk} = \tilde a_k \;\; (k = 1, \dots, M).
-\tag{7}
+\qquad\text{(7)}
 ```
 
 The surrogate objective is
 
 ```math
 \hat F_C(z) = \sum_{t=1}^{N} \Big[\log \sum_{k=0}^{M} e^{\langle z, U_{tk}\rangle} - \langle z, U_{t0} \rangle\Big] + \frac{\lVert z\rVert^2}{2\sigma^2},
-\tag{8}
+\qquad\text{(8)}
 ```
 
 a sum of log-sum-exps of affine functions plus a quadratic. It is therefore strongly
 convex for *any* $`\theta`$ and *any* proposal draw, with gradient and Hessian given by (5)
 once $`\pi`$ is replaced by the softmax over candidates,
-$`\pi_{tk} = \operatorname{softmax}_k \langle z, U_{tk}\rangle`$.
+$`\pi_{tk} = \mathrm{softmax}_k \langle z, U_{tk}\rangle`$.
 
 **The solver.** We run damped Newton from $`z = 0`$, the no-preference option:
 $`z \leftarrow z - \eta H^{-1} g`$. The step size $`\eta`$ is the largest value in
@@ -243,8 +243,8 @@ context $`C`$ (the first $`N_c`$ steps) and targets $`T`$ (the last $`N_t`$). Th
 the targets under the option recognized from the context:
 
 ```math
-\mathcal{L}(\theta) \;=\; \mathbb{E}_{\text{windows}}\;\Bigg[-\frac{1}{N_t}\sum_{t \in T} \log \operatorname{softmax}_k \big\langle \hat z_\theta(C),\, U_{tk} \big\rangle \Big|_{k=0}\Bigg].
-\tag{9}
+\mathcal{L}(\theta) \;=\; \mathbb{E}_{\text{windows}}\;\Bigg[-\frac{1}{N_t}\sum_{t \in T} \log \mathrm{softmax}_k \big\langle \hat z_\theta(C),\, U_{tk} \big\rangle \Big|_{k=0}\Bigg].
+\qquad\text{(9)}
 ```
 
 This is the InfoNCE form [Gutmann & Hyvärinen, 2010; van den Oord et al., 2018] of
@@ -277,7 +277,7 @@ $`\bar H = \mathrm{sg}\big(\nabla_z^2 \hat F_C(\bar z)\big)`$, and define
 
 ```math
 \check z(\theta) \;=\; \bar z \;-\; \bar H^{-1}\, \nabla_z \hat F_C(\bar z;\, \theta).
-\tag{10}
+\qquad\text{(10)}
 ```
 
 Then $`\check z = \hat z`$ in value, and
@@ -309,7 +309,7 @@ probability that it shares the option of the context's edge,
 
 ```math
 \hat F_C^{\,h}(z) = \sum_{t \in C} (1-h)^{\delta_t}\, \hat\ell_t(z) + \frac{\lVert z\rVert^2}{2\sigma^2},
-\tag{11}
+\qquad\text{(11)}
 ```
 
 with $`\delta_t`$ the distance from the edge and $`\hat \ell_t`$ the per-step term of (8).
@@ -319,8 +319,8 @@ $`\rho_l = (1-h)^l`$, and is otherwise an outlier at the uniform rate, $`1/(M{+}
 InfoNCE units:
 
 ```math
--\log\Big(\rho_l\, \operatorname{softmax}_k \langle \hat z, U_{tk}\rangle\big|_{k=0} + (1-\rho_l)\,\tfrac{1}{M+1}\Big).
-\tag{12}
+-\log\Big(\rho_l\, \mathrm{softmax}_k \langle \hat z, U_{tk}\rangle\big|_{k=0} + (1-\rho_l)\,\tfrac{1}{M+1}\Big).
+\qquad\text{(12)}
 ```
 
 **Online tracking.** Given the library, the posterior over the active option under
@@ -328,7 +328,7 @@ switching follows an HMM forward recursion with a closed-form transition step:
 
 ```math
 b_t(k) \;\propto\; \pi_\theta(a_t \mid s_t, z_k)\,\Big[(1-h)\, b_{t-1}(k) + \tfrac{h}{K-1}\big(1 - b_{t-1}(k)\big)\Big].
-\tag{13}
+\qquad\text{(13)}
 ```
 
 ### 3.7 Planning in option space
@@ -355,7 +355,7 @@ We factor the features through a state-dependent linear map of action features:
 ```math
 \phi_\theta(s, a) = \frac{W_\theta(s)\, \psi_\theta(a)}{\big\lVert W_\theta(s)\, \psi_\theta(a) \big\rVert},
 \qquad W_\theta(s) \in \mathbb{R}^{d \times p},\;\; \psi_\theta(a) \in \mathbb{R}^p .
-\tag{14}
+\qquad\text{(14)}
 ```
 
 Both towers are MLPs. They run once per state and once per proposal and are joined by a
@@ -714,7 +714,7 @@ $`\pi\big(a \mid s, \sum_i w_i z_i\big)`$. ∎
 **Proposition 2.** Differentiating (2) under the integral gives the
 exponential-family identities
 $`\nabla_z \Lambda = \mathbb{E}_{\pi}[\beta\phi]`$ and
-$`\nabla_z^2 \Lambda = \operatorname{Cov}_{\pi}[\beta\phi] \succeq 0`$.
+$`\nabla_z^2 \Lambda = \mathrm{Cov}_{\pi}[\beta\phi] \succeq 0`$.
 Summing over steps and adding the prior's gradient $`z/\sigma^2`$ and Hessian
 $`I/\sigma^2`$ gives (5) and $`\nabla^2 F_C \succeq \sigma^{-2} I`$. For the surrogate (8)
 the same identities hold with $`\pi`$ replaced by the softmax over candidates. ∎
