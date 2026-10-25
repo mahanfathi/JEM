@@ -58,6 +58,14 @@ def test_tile_pads_short_panels_and_empty_cells():
     assert rows[0].shape == (4, 6, 3) and (rows[0][2:, 3:] == 255).all()
 
 
+def test_caption_draws_a_box_and_keeps_the_frame():
+    img = np.zeros((120, 160, 3), np.uint8)
+    out = record._caption(img, "expert: toward")  # needs Pillow >= 10.1 (sized default font)
+    assert out.shape == img.shape and out.dtype == np.uint8
+    assert out[:30, :120].max() == max(record.PAPER)  # the light box behind the text
+    assert out[60:].max() == 0  # nothing below it
+
+
 @pytest.mark.parametrize("suffix", [".webp", ".gif"])
 def test_save_animation_writes_every_frame(tmp_path, suffix):
     rng = np.random.default_rng(0)

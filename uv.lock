@@ -188,6 +188,7 @@ dependencies = [
 sim = [
     { name = "mujoco" },
     { name = "mujoco-warp" },
+    { name = "pillow" },
     { name = "warp-lang" },
 ]
 
@@ -203,6 +204,7 @@ requires-dist = [
     { name = "mujoco", marker = "extra == 'sim'", specifier = ">=3.17" },
     { name = "mujoco-warp", marker = "extra == 'sim'", specifier = ">=3.17" },
     { name = "numpy", specifier = ">=2.0" },
+    { name = "pillow", marker = "extra == 'sim'", specifier = ">=10.1" },
     { name = "torch", specifier = ">=2.9", index = "https://download.pytorch.org/whl/cu130" },
     { name = "warp-lang", marker = "extra == 'sim'", specifier = ">=1.18" },
 ]

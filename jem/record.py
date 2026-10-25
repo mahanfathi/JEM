@@ -2,30 +2,27 @@
 options, and the paths a planner executes around obstacles never seen in the demos.
 
 Joint trajectories are simulated with MuJoCo Warp, as everywhere else, then replayed
-through MuJoCo's own renderer (headless, EGL). The target is a red sphere and the hand
-leaves a trail in its option's colour. Animations play in real time (20 Hz control):
-animated WebP by default (true colour, small), or GIF.
+through MuJoCo's own renderer (headless, EGL; `jem/__init__.py` selects it before mujoco
+is imported). The target is a red sphere and the hand leaves a trail in its option's
+colour. Animations play in real time, one frame per control step: animated WebP by default
+(true colour, small), or GIF.
 
     uv run jem record runs/<arm run> --out media/
 """
 
 from __future__ import annotations
 
-import os
+from pathlib import Path
 
-os.environ.setdefault("MUJOCO_GL", "egl")  # headless rendering; set before importing mujoco
+import mujoco
+import numpy as np
+import torch
+from PIL import Image, ImageDraw, ImageFont
 
-from pathlib import Path  # noqa: E402
-
-import mujoco  # noqa: E402
-import numpy as np  # noqa: E402
-import torch  # noqa: E402
-from PIL import Image, ImageDraw, ImageFont  # noqa: E402
-
-from jem.downstream import ARM_DEFAULTS, ARM_TASKS, DownstreamConfig, make_task, run  # noqa: E402
-from jem.envs.panda import ASSET, obstacle_spec  # noqa: E402
-from jem.evaluate import expert_rollout, rollout  # noqa: E402
-from jem.figures import SERIES  # noqa: E402
+from jem.downstream import ARM_DEFAULTS, ARM_TASKS, DownstreamConfig, make_task, run
+from jem.envs.panda import ASSET, obstacle_spec
+from jem.evaluate import expert_rollout, rollout
+from jem.figures import SERIES
 
 TARGET = (0.9, 0.12, 0.12, 1.0)
 NEW = 6  # SERIES colour of behaviour nobody demonstrated: sums of options, planned paths
@@ -184,7 +181,7 @@ def _swatches(width: int) -> np.ndarray:
     return np.pad(strip, ((0, 0), (0, width - strip.shape[1]), (0, 0)), mode="edge")
 
 
-def save_animation(frames: list[np.ndarray], path: Path, fps: float = 20.0) -> Path:
+def save_animation(frames: list[np.ndarray], path: Path, fps: float) -> Path:
     """An animation in the format of `path`'s suffix: .webp (lossy, true colour) or .gif.
 
     A GIF gets one palette for all frames (no flicker), taken from the last frame, which
@@ -213,6 +210,7 @@ def record_options(
 ) -> list[Path]:
     """experts, options (both from one shared start) and compositions, as animations."""
     world = lib.world
+    fps = 1 / world.cfg.dt  # one frame per control step: real time
     gen = torch.Generator(device=world.device).manual_seed(seed)
     start = world.reset(1, gen)
     model = render_model()
@@ -253,9 +251,9 @@ def record_options(
         )
     out.mkdir(parents=True, exist_ok=True)
     return [
-        save_animation(tile(experts, 3), out / f"experts.{fmt}"),
-        save_animation(tile(options, 3), out / f"options.{fmt}"),
-        save_animation(tile(comps, 3), out / f"compositions.{fmt}"),
+        save_animation(tile(experts, 3), out / f"experts.{fmt}", fps),
+        save_animation(tile(options, 3), out / f"options.{fmt}", fps),
+        save_animation(tile(comps, 3), out / f"compositions.{fmt}", fps),
     ]
 
 
@@ -300,4 +298,4 @@ def record_planning(
                 panel(model, traj[b], _rgba(SERIES[NEW]), CAMERAS[kind], size, label, mocap)
             )
     out.mkdir(parents=True, exist_ok=True)
-    return save_animation(tile(panels, episodes), out / f"plan-{planner}.{fmt}")
+    return save_animation(tile(panels, episodes), out / f"plan-{planner}.{fmt}", 1 / dt)
