@@ -9,6 +9,9 @@ with a single energy function E(s, z, a). That one function does three jobs:
   - concurrently, by adding energies;
   - over time, by planning in option space.
 
+There are two testbeds, with exact expert densities in both: a 2-D particle, and a
+7-DoF Franka Panda arm simulated on the GPU with MuJoCo Warp.
+
 ![options](docs/figures/options.png)
 
 ## The idea
@@ -97,23 +100,95 @@ objective (`objective.hazard`) recovers recognition well. At hazard 1/32, NMI go
 0.85 to 0.96 and tracking from 0.77 to 0.91. Policy fidelity still lags the
 non-switching case.
 
+## A 7-DoF arm in MuJoCo Warp
+
+A Franka Panda arm simulated on the GPU with [MuJoCo Warp](https://github.com/google-deepmind/mujoco_warp),
+DeepMind and NVIDIA's MuJoCo on NVIDIA Warp (the physics solver inside Newton and Isaac
+Lab). Thousands of arms step in parallel, driven straight from PyTorch tensors.
+
+- **Actions:** 7-D joint velocity commands, tracked by the arm's position servos, with
+  gravity compensated as on the real robot.
+- **Experts:** six task-space behaviours around a target point. *toward* and *away*
+  move radially, *cw* and *ccw* orbit the target's vertical axis, *up* and *down* move
+  vertically. A damped-least-squares controller turns each into joint velocities, and
+  every action is a truncated Gaussian around it, so every density, product of experts
+  and Bayes rate is exact. One step is ambiguous; eight are nearly decisive.
+
+What worked on the particle fails here: the options get *worse* the longer training runs,
+while the training loss keeps improving. A separate option for every window absorbs
+whatever persists in one demonstration (an orbit's radius), so the library entry shared
+by all of an expert's demonstrations fits poorly. One change inside the framework fixes
+it (`docs/paper.md` §3.9, §5.8):
+
+- **Options consolidate into prototypes.** After 2k steps, six prototype options are
+  trained as a mixture under the exact held-out likelihood. This is EM, with
+  recognition as the E-step. A prototype must explain every demonstration assigned to
+  it, so the features have to carry the state dependence. With this alone, the
+  particle's recipe reaches the fidelity of a model trained with the expert labels.
+- **Optional:** proposals from a learned behaviour prior raise the effective sample size
+  in 7-D from 4% to 40%, using importance offsets so options keep their meaning. Targets
+  drawn up to 2 s after the context help a little further. The `panda` preset uses both;
+  on this arm they are refinements, not requirements.
+
+Preset `panda`, 10k steps, 3 seeds:
+
+| | |
+|---|---|
+| Options rediscovered (NMI) | 0.993 |
+| Recognition from 1 / 2 / 4 / 8 / 16 steps (Bayes 0.803 / 0.892 / 0.963 / 0.987 / 0.998) | 0.788 / 0.886 / 0.951 / 0.975 / 0.994 |
+| Policy KL(expert ‖ option), nats | 0.071 |
+| Zero-shot composition z_i + z_j: KL to the exact product of experts | 0.154 nats (7.5°) |
+| Weighted composition z_i + w z_j, w ∈ {¼, ½, 2, 4} | 0.134 nats (8.5°) |
+| Online tracking of hidden switches (Bayes 0.948) | 0.943 |
+| Closed-loop agreement with the matched expert (experts' own: 0.688) | 0.686 |
+
+![arm options](docs/figures/arm_rollouts.png)
+![arm compositions](docs/figures/arm_compositions.png)
+
+**Planning on the arm.** A physical obstacle, absent from every demonstration, stands
+between the hand and the target: a pillar to go around, or a bin to reach into (up,
+over the rim, down; plans are sequences of two options). All planners get 192 simulated
+rollouts per decision; 64 episodes × 3 seeds:
+
+| Planner | Pillar, 1 s horizon | Pillar, 2 s horizon | Bin, 2 s horizon |
+|---|---|---|---|
+| always "toward" | 7% | 8% | 0% |
+| CEM over raw joint commands | 23% | 4% | 0% |
+| discovered options and their sums | 46% | 43% | 6% |
+| the same search with the true experts | 44% | 34% | 10% |
+| CEM over the continuous option space | **65%** | **81%** | **85%** |
+
+The discovered library plans as well as the true experts do. Searching the continuous
+option space plans best, because it can blend behaviours for the final approach.
+
+![arm planning](docs/figures/arm_downstream_bin.png)
+
+The arm model (`jem/envs/assets/panda.xml`) is a mesh-free version of the Panda in
+[MuJoCo Menagerie](https://github.com/google-deepmind/mujoco_menagerie) (Apache-2.0;
+license in `jem/envs/assets/LICENSE-menagerie`), with capsules fitted to its collision
+meshes.
+
 ## Quickstart
 
 ```bash
-uv sync                                   # PyTorch cu130 wheels for aarch64 (see pyproject.toml)
-uv run jem train --preset jem             # writes runs/<timestamp>-jem/
+uv sync --extra sim                       # PyTorch cu130 wheels for aarch64; sim = MuJoCo Warp
+uv run jem train --preset jem             # the particle: writes runs/<timestamp>-jem/
+uv run jem train --preset panda           # the arm (needs a CUDA GPU and the sim extra)
 uv run jem dash                           # local dashboard: http://127.0.0.1:8765
 ```
+
+A plain `uv sync` installs only what the particle needs.
 
 More:
 
 ```bash
-uv run jem presets                                    # jem, jem-em, jem-d2, jem-unnormed, legacy, legacy-tuned, smoke
+uv run jem presets                                    # jem, jem-em, ..., panda, panda-uniform, smoke
 uv run jem train --preset jem --set model.option_dim=2 env.switch_prob=0.03 objective.hazard=0.03
 uv run jem eval runs/<run_id> --figures out/          # re-evaluate a checkpoint
-uv run jem downstream runs/<run_id> --task cup --horizon 40
+uv run jem downstream runs/<run_id> --task cup --horizon 40     # particle: circle | cup
+uv run jem downstream runs/<run_id> --task bin --horizon 40     # arm: bin | pillar
 uv run jem table                                      # markdown table of all runs (seeds pooled)
-./experiments/phase1.sh                               # the experiment suites (phase1-3)
+./experiments/phase1.sh                               # the experiment suites (phase1-4)
 uv run pytest
 ```
 
@@ -144,7 +219,12 @@ markers; figures by step; config diffs. It runs locally, with no external servic
 |---|---|
 | `jem/energy.py` | Option-linear energy (factored or joint features); the 2022 concat-MLP energy |
 | `jem/inference.py` | Newton option inference with implicit gradients; Langevin inference (2022) |
-| `jem/objectives.py` | The JEM objective (plain or switching-aware); the 2022 ML+KL+KLz objective |
+| `jem/objectives.py` | The JEM objective (plain, switching-aware, prototype mixture); the 2022 objective |
+| `jem/prior.py` | The behaviour prior that proposes actions in high dimensions |
+| `jem/envs/particle.py` | The 2-D particle world |
+| `jem/envs/panda.py`, `jem/envs/assets/` | The Panda arm, its experts and obstacle tasks; a mesh-free Menagerie model |
+| `jem/envs/mjw.py`, `jem/envs/kinematics.py` | Batched MuJoCo Warp stepping from torch; torch forward kinematics |
+| `jem/envs/tgauss.py` | Truncated Gaussians: exact sampling, densities and products |
 | `jem/evaluate.py`, `jem/figures.py` | Metrics against true expert densities; figures |
 | `jem/downstream.py` | Obstacle tasks and MPC planners |
 | `jem/options.py` | `OptionLibrary`: recognize, act, compose, roll out |

@@ -41,6 +41,16 @@ Mahan Fathi · October 2026
 >
 > Planning in the discovered option space solves an obstacle task, never demonstrated,
 > 85% of the time, where planning over raw actions succeeds 2% of the time.
+>
+> On a 7-DoF Franka arm simulated with MuJoCo Warp, the same training degrades as it
+> runs, because each window's option absorbs quirks of its own demonstration. One change
+> inside the framework fixes it: consolidating the options into prototypes trained by the
+> exact held-out likelihood of a mixture. There the model recognizes six
+> task-space experts within 1.5 points of the Bayes rate, matches their policies to
+> 0.07 nats, and composes them to within 0.15 nats of the exact product of experts.
+> It does as well as the same model trained with the expert labels. Planning over its
+> options reaches into an unseen bin 85% of the time, where planning over raw joint
+> commands never does.
 
 ---
 
@@ -110,8 +120,12 @@ together for options.
   one-step identity [Pineda et al., 2022; Bolte et al., 2023].
 - Two temporal extensions: hazard-aware learning when options switch, and online
   option tracking with an HMM over the discovered library (§3.6).
+- Consolidation of options into prototypes trained by the exact held-out likelihood of
+  a mixture, which carries the method to a 7-DoF arm simulated in MuJoCo Warp. It is EM
+  with recognition as the E-step. We also add optional proposals from a learned
+  behaviour prior, with importance offsets, for larger action spaces (§3.9).
 - An evaluation against *absolute* references (Bayes rates, true KL, exact products of
-  experts), with an open-source implementation (§5).
+  experts) on a planar testbed and on the arm, with an open-source implementation (§5).
 
 ---
 
@@ -377,6 +391,60 @@ batched matrix product, so a batch with $`M`$ proposals costs two small forward 
 instead of one pass per (state, proposal) pair. The form is a rank-$`p`$ separable
 approximation of a joint MLP on $`(s, a)`$, and it is linear in $`z`$ either way.
 
+### 3.9 Robot-scale action spaces
+
+On a 7-DoF arm (§5.8), training as in §3.3 makes the options *worse* the longer it runs,
+while the training loss keeps improving. One change fixes this. A second change is
+optional on the arm but addresses what fails first as actions grow more dimensions.
+
+**Consolidating options into prototypes.** Recognizing a separate option for every
+window lets the option absorb anything that persists through one demonstration, such as
+an orbit's radius or a vertical move's height. That covers for imperfect features, and
+the held-out objective rewards it: each window's own option fits it almost perfectly,
+but the library entry shared by all of an expert's demonstrations fits much worse. After
+the continuous objective has organized the option space, we therefore train $`P`$
+prototype options $`z_1, \dots, z_P`$, initialized by k-means of recognized options,
+under the exact held-out likelihood of a mixture over them:
+
+```math
+\mathcal{L}_{\text{mix}} \;=\; -\frac{1}{N_t}\,\log \sum_{c=1}^{P} \pi(c \mid C)\, \prod_{t \in T} \pi_\theta(a_t \mid s_t, z_c),
+\qquad
+\pi(c \mid C) \;\propto\; \prod_{t \in C} \pi_\theta(a_t \mid s_t, z_c).
+\qquad\text{(15)}
+```
+
+The posterior $`\pi(c \mid C)`$ is recognition by energy, the same computation as at test
+time. A prototype must explain every demonstration assigned to it, so the features, not
+the option, have to carry the state dependence. This is EM [Dempster et al., 1977] for a
+mixture of exponential-family policies with shared sufficient statistics. Prototypes are
+ordinary option vectors, so composition, the algebra and planning are unchanged.
+
+**Proposals from a behaviour prior (optional).** With expert noise $`\sigma`$ per
+dimension on a box of width $`w`$, a fraction of roughly $`(2.5\,\sigma/w)^{d_a}`$ of
+uniform proposals lands where an expert acts: about 4% on the arm, and exponentially less
+with more joints. We fit a behaviour prior $`q(a \mid s)`$, a mixture of truncated
+diagonal Gaussians [Bishop, 1994], by maximum likelihood on the unlabelled demonstrations,
+and freeze it. It sees the state only, never the context, so it models the marginal over
+experts and cannot leak the option. Each half of a window draws one candidate set from
+$`r = (1-\rho)\, q(\cdot \mid s_{\text{first}}) + \rho\, \mathcal{U}`$ at the half's first
+state, which none of the half's actions influenced, and every logit carries the importance
+offset $`c_k = -\log r(a_k)`$:
+
+```math
+\mathrm{softmax}_k \big( \langle z, U_{tk} \rangle + c_{tk} \big).
+\qquad\text{(16)}
+```
+
+The offsets do not depend on $`z`$. Recognition therefore stays strongly convex, with the
+same gradient and Hessian under the reweighted softmax, and Proposition 4 still holds.
+The ranking objective is consistent for $`\log \pi_\theta(a \mid s, z)`$ relative to the
+uniform base measure [Ma & Collins, 2018], so options and their products keep their
+meaning. The effective sample size rises from 4% to 40%. On the arm, consolidation alone
+already reaches the same fidelity (§5.8), so the prior is a tool for larger action
+spaces rather than a requirement here. Using $`q`$ as the base measure instead fails:
+wherever expert $`k`$ rarely visits a state, $`q`$ has almost no mass where $`k`$ acts,
+and the residual $`\log \pi_k / q`$ the option must encode is unbounded.
+
 ---
 
 ## 4 Algorithms
@@ -419,12 +487,23 @@ Algorithm 3  TRACK(z_1..z_K, h, stream)                  ▷ online recognition 
 ```
 
 ```text
-Algorithm 4  PLAN(s, goal; candidate source, H, R)       ▷ composing options over time
+Algorithm 4  PLAN(s, goal; candidate source, H, R, S)    ▷ composing options over time
   while goal not reached:
-      Z ← candidates: library ∪ pairwise sums, or CEM samples over z ∈ ℝ^d
+      Z ← candidates: library ∪ pairwise sums, or CEM samples over z ∈ ℝ^d;
+          with S > 1 segments a candidate is a sequence of S options, each held H/S steps
       for z ∈ Z:  simulate H steps with a ~ π_θ(· | s, z);  c(z) ← min_h dist(s_h) + 0.1 dist(s_H)
       (CEM only) refit a Gaussian to the elite candidates and resample; repeat
       execute R steps with the best z
+```
+
+```text
+Algorithm 5  CONSOLIDATE(z_1..z_P)                       ▷ after the continuous phase (§3.9)
+  initialize z_1..z_P by k-means of options recognized from training contexts
+  each step, for a batch of windows (context C, targets T):
+      ℓ_t(c) ← log softmax_k (⟨z_c, U[t,k]⟩ + c[t,k]) at k = 0    ▷ every step, every prototype
+      log π(c | C) ← log softmax_c Σ_{t∈C} ℓ_t(c)                 ▷ recognition by energy
+      ℓ ← −(1/N_t) log Σ_c π(c | C) exp Σ_{t∈T} ℓ_t(c)            ▷ (15); also C and T swapped
+      update θ and z_1..z_P by ∇ℓ
 ```
 
 ---
@@ -626,6 +705,124 @@ planner escapes the cup, because a myopic cost cannot see the way out. The discr
 library beats CEM over $`z`$: its candidates are meaningful behaviours by construction,
 whereas a Gaussian search over $`z`$ spends its budget on weak, low-norm options.
 
+### 5.8 A 7-DoF arm in MuJoCo Warp
+
+**Testbed.** A Franka Panda arm in MuJoCo [Todorov et al., 2012], simulated on the GPU by
+MuJoCo Warp [Google DeepMind & NVIDIA, 2025], with thousands of arms stepped in parallel
+directly from PyTorch tensors.
+
+- **Model.** Menagerie's kinematics, inertias and position servos [Zakka et al., 2022],
+  with capsules fitted to its collision meshes, a 10 cm tool, and gravity compensation
+  as on the real robot.
+- **Actions.** An action $`a \in [-1,1]^7`$ is a joint velocity command, which the
+  servos track; the policy runs at 20 Hz.
+- **Experts.** Six experts move the end effector relative to a target $`g`$, in a
+  cylindrical frame: radially (*toward*, *away*), around the vertical axis through
+  $`g`$ (*cw*, *ccw*), or vertically (*up*, *down*). Damped least squares maps each
+  task-space velocity to joint velocities, plus a null-space posture term that all
+  experts share. The action is a truncated Gaussian,
+  $`a \sim \mathcal{TN}\big(\mu_k(s), 0.35^2 I\big)`$ on the box.
+- **Exact references.** Truncated Gaussians on a common box are closed under weighted
+  products, so every expert density, every product of experts and every Bayes rate is
+  exact, and compositions can be scored by KL in nats rather than by angle.
+- **Observation.** $`s = (q, x, g, g - x) \in \mathbb{R}^{16}`$ holds exactly the
+  experts' inputs. Joint velocities are left out because they would reveal the active
+  option.
+
+One step is ambiguous (Bayes 0.80), and sixteen are nearly decisive (0.998). Training
+uses 4,096 demonstrations of 3.2 s.
+
+**The planar recipe fails, and consolidation fixes it** (seed 0, 10k steps; policy KL in
+nats at states pooled over all experts, NMI in brackets):
+
+| Proposals | Targets | Without consolidation | With consolidation |
+|---|---|---|---|
+| uniform (the planar recipe) | right after the context | 2.38 (0.70) | 0.078 (0.983) |
+| uniform | up to 2 s later | — | 0.076 (0.989) |
+| behaviour prior | right after the context | 1.24 (0.57) | 0.077 (0.988) |
+| behaviour prior | up to 2 s later | 6.39 (0.47) | **0.068 (0.995)**, the `panda` preset |
+
+The same model fit with the expert labels, one free option per expert, reaches 0.09.
+
+- **Without consolidation, every variant degrades as training proceeds.** KL rises from
+  0.76 to 2.38 nats with uniform proposals and from 0.61 to 1.24 with prior proposals,
+  and gapped targets collapse it, all while the training loss keeps improving. The
+  cause is option drift. A window's own option explains its held-out steps to within
+  0.03–0.06 nats per step, while its expert's library entry needs 0.2–0.4.
+- **With consolidation, every variant lands within 0.01 nats of the others** and of the
+  label-trained model, and the library entry explains held-out windows to within 0.02
+  nats. Prior proposals and gapped targets add a little (NMI 0.983 → 0.995, cancellation
+  KL 0.21 → 0.17), so the `panda` preset keeps them, but consolidation is the change
+  that matters.
+
+**Results** (the `panda` preset, 10k steps, 3 seeds, standard deviations below 0.011
+throughout):
+
+| | Model | Reference |
+|---|---|---|
+| Discovery: NMI | 0.993 | 1 |
+| Recognition, $`N`$ = 1 / 2 / 4 / 8 / 16 | 0.788 / 0.886 / 0.951 / 0.975 / 0.994 | Bayes: 0.803 / 0.892 / 0.963 / 0.987 / 0.998 |
+| Policy KL (expert ‖ option) | 0.071 nats | 0 |
+| Heading error of the mean end-effector velocity | 5.7° | 0° |
+| Composition $`z_i + z_j`$, orthogonal pairs: KL to the exact product / angle | 0.154 nats / 7.5° | 0 |
+| Composition, antipodal pairs (should stand still): KL | 0.166 nats | 0 |
+| Algebra $`z_i + w z_j`$, $`w \in \lbrace \tfrac14, \tfrac12, 2, 4 \rbrace`$ | 0.134 nats / 8.5° | 0 |
+| Online tracking of hidden switches | 0.943 | Bayes filter: 0.948 |
+| Closed-loop agreement with the matched expert | 0.686 | experts' own: 0.688 |
+
+<p align="center">
+  <img src="figures/arm_rollouts.png" width="100%" alt="End-effector paths of each discovered option on the arm">
+</p>
+<p align="center">
+  <img src="figures/arm_compositions.png" width="100%" alt="Sums of options on the arm: an inward spiral, a helix, a diagonal and two cancellations">
+</p>
+
+Recognition stays within 1.5 points of the Bayes rate at every context length, and
+composition is within a few tenths of a nat of the exact product of experts, all on a
+real articulated system. Unlike on the particle, opposite behaviours are not opposite
+vectors (antipodal cosine −0.09), yet their sums still cancel.
+
+**Planning on the arm.** Two tasks put a physical obstacle, absent from every
+demonstration, between the end effector and the target; contacts are simulated.
+
+- **Pillar.** A pillar taller than the arm can reach over stands halfway to the target.
+  Going around it means composing an orbit with an approach.
+- **Bin.** The target sits inside an open box on a pedestal, and the end effector starts
+  outside it, below the rim. The way in is up, over and down. The outer face of the wall
+  is a local minimum of the distance, so a plan must accept getting farther away first.
+  Here a plan is a sequence of two options, each held for half the horizon.
+
+All planners get 192 simulated rollouts per decision and replan every 5 steps. Success
+means coming within 4 cm, over 64 episodes × 3 seeds. The oracle runs the library planner
+with the true experts and their exact products, so it is the same search over perfect
+options.
+
+| Planner | Pillar, $`H = 20`$ | Pillar, $`H = 40`$ | Bin, $`H = 40`$, two-option plans |
+|---|---|---|---|
+| Always "toward" | 7% | 8% | 0% |
+| CEM over raw actions (140–280 dimensions) | 23% | 4% | 0% |
+| Library and its pairwise sums (21 candidates; bin: sampled sequences) | 46% | 43% | 6% |
+| Oracle: the same search with the true experts | 44% | 34% | 10% |
+| CEM over options (8; bin: 16 dimensions) | **65 ± 3%** | **81 ± 4%** | **85 ± 5%** |
+
+<p align="center">
+  <img src="figures/arm_downstream_bin.png" width="80%" alt="Planner trajectories into the bin, side view">
+</p>
+
+- **Option-space search wins, and wins more as the horizon grows.** Raw-action search
+  collapses (23% → 4%) as its dimension doubles, while CEM over options improves
+  (65% → 81%).
+- **The discovered library plans as well as the true experts do.** It is even slightly
+  better than the oracle, so the gap to option-CEM is not a modelling error.
+- **Why the discrete library underperforms here.** A discrete set of behaviours, each
+  held for a whole segment, is too coarse for the final approach. Its sequences get over
+  the bin's rim, but rarely settle within 4 cm before the 8 s episode ends. The
+  continuous option space interpolates between behaviours: it can, for instance, slow an
+  approach without stopping it.
+
+On the planar cup the ordering was the reverse (§5.7). There, a few discrete detours
+sufficed, and CEM over $`z`$ wasted its budget on weak options.
+
 ---
 
 ## 6 Related work
@@ -776,10 +973,15 @@ is established:
   but still infers a single option from it. The principled fix is to marginalize over
   the position of the last switch inside the context: solve (11) for every suffix,
   which is cheap on cached features, and weight each solution by its Laplace evidence.
-- **High-dimensional actions.** Uniform proposals lose effective sample size
-  exponentially in $`d_a`$. Two remedies keep the objective intact:
-  - a learned proposal used purely as an importance sampler;
-  - Langevin refinement of the proposals at test time.
+- **The number of prototypes.** Consolidation (§3.9) needs the number of options, as
+  the evaluation's k-means does. A generous number with unused prototypes pruned by
+  their recognition mass would remove the choice. Consolidation also assumes the
+  demonstrations come from a few discrete behaviours. For a continuous family, the
+  per-window option is the right object, and its drift is the open problem.
+- **Richer robots.** The arm's experts are task-space controllers with exact
+  densities. Legged robots with learned, command-conditioned policies would test the
+  method on contact-rich gaits; there the state reveals much of the behaviour, which
+  makes identifiability harder.
 - **An initiation model.** A learned prior $`p(z \mid s)`$ would say which options are
   plausible where. It would make joint inference of $`(z, a)`$ well posed, and it would
   supply a planning prior. Seeding option-space planning with the library is the
@@ -802,19 +1004,22 @@ is established:
 - Barreto, A., Borsa, D., Hou, S., Comanici, G., Aygün, E., Hamel, P., Toyama, D., Hunt, J., Mourad, S., Silver, D., & Precup, D. (2019). The option keyboard: Combining skills in reinforcement learning. *NeurIPS*.
 - Barreto, A., Dabney, W., Munos, R., Hunt, J. J., Schaul, T., van Hasselt, H., & Silver, D. (2017). Successor features for transfer in reinforcement learning. *NIPS*.
 - Bertinetto, L., Henriques, J. F., Torr, P. H. S., & Vedaldi, A. (2019). Meta-learning with differentiable closed-form solvers. *ICLR*.
+- Bishop, C. M. (1994). Mixture density networks. *Technical report NCRG/94/004, Aston University*.
 - Bolte, J., Pauwels, E., & Vaiter, S. (2023). One-step differentiation of iterative algorithms. *NeurIPS*.
 - Collins, M., Dasgupta, S., & Schapire, R. E. (2001). A generalization of principal components analysis to the exponential family. *NIPS*.
 - Cranley, R., & Patterson, T. N. L. (1976). Randomization of number theoretic methods for multiple integration. *SIAM Journal on Numerical Analysis*.
+- Dempster, A. P., Laird, N. M., & Rubin, D. B. (1977). Maximum likelihood from incomplete data via the EM algorithm. *Journal of the Royal Statistical Society, Series B*.
 - Devin, C., Geng, D., Abbeel, P., Darrell, T., & Levine, S. (2019). Compositional plan vectors. *NeurIPS*.
+- Du, Y., & Mordatch, I. (2019). Implicit generation and modeling with energy based models. *NeurIPS*.
 - Du, Y., Li, S., & Mordatch, I. (2020). Compositional visual generation with energy based models. *NeurIPS*.
 - Du, Y., Li, S., Sharma, Y., Tenenbaum, J. B., & Mordatch, I. (2021a). Unsupervised learning of compositional energy concepts. *NeurIPS*.
 - Du, Y., Li, S., Tenenbaum, J., & Mordatch, I. (2021b). Improved contrastive divergence training of energy-based models. *ICML*.
-- Du, Y., & Mordatch, I. (2019). Implicit generation and modeling with energy based models. *NeurIPS*.
 - Eysenbach, B., Gupta, A., Ibarz, J., & Levine, S. (2019). Diversity is all you need: Learning skills without a reward function. *ICLR*.
 - Florence, P., Lynch, C., Zeng, A., Ramirez, O., Wahid, A., Downs, L., Wong, A., Lee, J., Mordatch, I., & Tompson, J. (2021). Implicit behavioral cloning. *CoRL*.
 - Fox, R., Krishnan, S., Stoica, I., & Goldberg, K. (2017). Multi-level discovery of deep options. *arXiv:1703.08294*.
 - Fung, S. W., Heaton, H., Li, Q., McKenzie, D., Osher, S., & Yin, W. (2022). JFB: Jacobian-free backpropagation for implicit networks. *AAAI*.
 - Garnelo, M., Rosenbaum, D., Maddison, C. J., Ramalho, T., Saxton, D., Shanahan, M., Teh, Y. W., Rezende, D. J., & Eslami, S. M. A. (2018). Conditional neural processes. *ICML*.
+- Google DeepMind & NVIDIA (2025). MuJoCo Warp: MuJoCo on NVIDIA Warp for GPU-parallel simulation. *github.com/google-deepmind/mujoco_warp*.
 - Grathwohl, W., Wang, K.-C., Jacobsen, J.-H., Duvenaud, D., Norouzi, M., & Swersky, K. (2020). Your classifier is secretly an energy based model and you should treat it like one. *ICLR*.
 - Gutmann, M., & Hyvärinen, A. (2010). Noise-contrastive estimation: A new estimation principle for unnormalized statistical models. *AISTATS*.
 - Haarnoja, T., Pong, V., Zhou, A., Dalal, M., Abbeel, P., & Levine, S. (2018). Composable deep reinforcement learning for robotic manipulation. *ICRA*.
@@ -839,6 +1044,7 @@ is established:
 - Sutton, R. S., Precup, D., & Singh, S. (1999). Between MDPs and semi-MDPs: A framework for temporal abstraction in reinforcement learning. *Artificial Intelligence*.
 - Ta, D. N., Cousineau, E., Zhao, H., & Feng, S. (2022). Conditional energy-based models for implicit policies: The gap between theory and practice. *arXiv:2207.05824*.
 - Taylor, G. W., & Hinton, G. E. (2009). Factored conditional restricted Boltzmann machines for modeling motion style. *ICML*.
+- Todorov, E., Erez, T., & Tassa, Y. (2012). MuJoCo: A physics engine for model-based control. *IROS*.
 - Touati, A., & Ollivier, Y. (2021). Learning one representation to optimize all rewards. *NeurIPS*.
 - Urain, J., Li, A., Liu, P., D'Eramo, C., & Peters, J. (2021). Composable energy policies for reactive motion generation and reinforcement learning. *RSS*.
 - van den Oord, A., Li, Y., & Vinyals, O. (2018). Representation learning with contrastive predictive coding. *arXiv:1807.03748*.
@@ -847,6 +1053,7 @@ is established:
 - Wu, F., Gao, C., Yang, C., Zhao, Y., Dai, B., & Wu, A. (2026). Learning expressive and compositional motion representation via spectral skills. *arXiv:2609.37677*.
 - Wu, H., Esmaeili, B., Wick, M., Tristan, J.-B., & van de Meent, J.-W. (2021). Conjugate energy-based models. *ICML*.
 - Xie, K., Bharadhwaj, H., Hafner, D., Garg, A., & Shkurti, F. (2021). Latent skill planning for exploration and transfer. *ICLR*.
+- Zakka, K., Tassa, Y., & MuJoCo Menagerie contributors (2022). MuJoCo Menagerie: A collection of high-quality simulation models for MuJoCo. *github.com/google-deepmind/mujoco_menagerie*.
 - Zhu, H., De La Crompe, B., Kalweit, G., Schneider, A., Kalweit, M., Diester, I., & Boedecker, J. (2024). Multi-intention inverse Q-learning for interpretable behavior representation. *TMLR*.
 - Ziebart, B. D., Maas, A., Bagnell, J. A., & Dey, A. K. (2008). Maximum entropy inverse reinforcement learning. *AAAI*.
 - Zimmermann, R. S., Sharma, Y., Schneider, S., Bethge, M., & Brendel, W. (2021). Contrastive learning inverts the data generating process. *ICML*.
@@ -903,6 +1110,20 @@ same expression. ∎
 | Data | 4,096 training and 512 validation trajectories of 64 steps |
 | Throughput | ≈29 steps/s on one NVIDIA GB10 (TF32) |
 
+**The arm (§5.8).** Same model and optimizer, with these differences:
+
+| Setting | Value |
+|---|---|
+| Physics | MuJoCo Warp 3.17, implicitfast, 2 ms steps, 25 per action (20 Hz), CUDA graphs |
+| Actions | joint velocity commands in $`[-1,1]^7`$ (0.2 × the Panda's velocity limits) |
+| Experts | 0.25 m/s task-space speed; damped least squares, $`\lambda = 0.05`$; noise $`\sigma = 0.35`$ |
+| Behaviour prior | 16 truncated-Gaussian components, 2 hidden layers of 256; 2k MLE steps, then frozen |
+| Proposals | 256 per half-window: 192 from the prior, 64 uniform |
+| Windows | 8 context + 8 target steps; targets start 0–40 steps after the context |
+| Consolidation | 6 prototypes from step 2,000 (k-means init); per-window loss off afterwards |
+| Data | 4,096 training and 512 validation demonstrations of 64 steps (3.2 s) |
+| Throughput | ≈16 steps/s on one NVIDIA GB10 |
+
 Three runs predate two numerical refinements, the tie-breaking line search of §3.2 and 8
 rather than 10 Newton iterations: the single-seed ablations of §5.4 (unbounded features,
 two-dimensional options, joint features) and seed 0 of the EM variant. The refinements
@@ -913,4 +1134,5 @@ Code, configurations and experiment scripts are in this repository:
 
 - `experiments/phase1.sh`: §5.2–5.5;
 - `experiments/phase2.sh`: §5.6;
-- `experiments/phase3.sh`: §5.7.
+- `experiments/phase3.sh`: §5.7;
+- `experiments/phase4.sh`: §5.8.
