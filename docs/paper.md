@@ -823,6 +823,10 @@ options.
 On the planar cup the ordering was the reverse (§5.7). There, a few discrete detours
 sufficed, and CEM over $`z`$ wasted its budget on weak options.
 
+Animations of the six experts, the discovered options run from the same start, sums of
+options, and the paths option-CEM executes into the bin and around the pillar are in
+[`media/`](media/), rendered by `jem record`.
+
 ---
 
 ## 6 Related work

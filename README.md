@@ -142,7 +142,17 @@ Preset `panda`, 10k steps, 3 seeds:
 | Online tracking of hidden switches (Bayes 0.948) | 0.943 |
 | Closed-loop agreement with the matched expert (experts' own: 0.688) | 0.686 |
 
-![arm options](docs/figures/arm_rollouts.png)
+The six experts, then the six discovered options run as policies from the same start
+(each hand trail in its option's colour; the red sphere is the target):
+
+![arm experts](docs/media/experts.webp)
+![arm options](docs/media/options.webp)
+
+Sums of two options, which no demonstration contains:
+
+![arm sums of options](docs/media/compositions.webp)
+
+![arm option rollouts](docs/figures/arm_rollouts.png)
 ![arm compositions](docs/figures/arm_compositions.png)
 
 **Planning on the arm.** A physical obstacle, absent from every demonstration, stands
@@ -159,8 +169,10 @@ rollouts per decision; 64 episodes × 3 seeds:
 | CEM over the continuous option space | **65%** | **81%** | **85%** |
 
 The discovered library plans as well as the true experts do. Searching the continuous
-option space plans best, because it can blend behaviours for the final approach.
+option space plans best, because it can blend behaviours for the final approach. Below are
+the paths it executes in three episodes of each task (obstacles drawn see-through):
 
+![arm planning, executed paths](docs/media/plan-option-cem.webp)
 ![arm planning](docs/figures/arm_downstream_bin.png)
 
 The arm model (`jem/envs/assets/panda.xml`) is a mesh-free version of the Panda in
@@ -187,6 +199,7 @@ uv run jem train --preset jem --set model.option_dim=2 env.switch_prob=0.03 obje
 uv run jem eval runs/<run_id> --figures out/          # re-evaluate a checkpoint
 uv run jem downstream runs/<run_id> --task cup --horizon 40     # particle: circle | cup
 uv run jem downstream runs/<run_id> --task bin --horizon 40     # arm: bin | pillar
+uv run jem record runs/<arm run_id> --out media/      # arm animations: experts, options, sums, planning
 uv run jem table                                      # markdown table of all runs (seeds pooled)
 ./experiments/phase1.sh                               # the experiment suites (phase1-4)
 uv run pytest
@@ -227,6 +240,7 @@ markers; figures by step; config diffs. It runs locally, with no external servic
 | `jem/envs/tgauss.py` | Truncated Gaussians: exact sampling, densities and products |
 | `jem/evaluate.py`, `jem/figures.py` | Metrics against true expert densities; figures |
 | `jem/downstream.py` | Obstacle tasks and MPC planners |
+| `jem/record.py` | Arm recordings (animated WebP or GIF) through MuJoCo's headless renderer |
 | `jem/options.py` | `OptionLibrary`: recognize, act, compose, roll out |
 | `jem/dashboard/` | The local dashboard (stdlib server and one HTML page) |
 | `experiments/` | Reproducible experiment suites |
