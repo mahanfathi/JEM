@@ -37,10 +37,10 @@ Mahan Fathi · October 2026
 > - recognizes them within a point of the Bayes rate;
 > - matches their policies to 0.05 nats;
 > - composes them zero-shot to within 5° of the exact product of experts;
-> - tracks hidden switches online at 99.5% of the Bayes-optimal filter's accuracy.
+> - tracks hidden switches online at 99.4% of the Bayes-optimal filter's accuracy.
 >
 > Planning in the discovered option space solves an obstacle task, never demonstrated,
-> 88% of the time, where planning over raw actions succeeds 2% of the time.
+> 85% of the time, where planning over raw actions succeeds 2% of the time.
 
 ---
 
@@ -457,14 +457,14 @@ full settings. Results are mean ± standard deviation over three seeds.
 
 | Metric | Model | Reference |
 |---|---|---|
-| Discovery (NMI) | 0.999 ± 0.002 | 1 |
-| Recognition, 1 step | 0.893 ± 0.002 | Bayes 0.902 |
-| Recognition, 2 steps | 0.967 ± 0.001 | Bayes 0.974 |
+| Discovery (NMI) | 1.000 ± 0.000 | 1 |
+| Recognition, 1 step | 0.895 ± 0.002 | Bayes 0.902 |
+| Recognition, 2 steps | 0.966 ± 0.001 | Bayes 0.974 |
 | Recognition, 4 steps | 0.996 ± 0.000 | Bayes 0.999 |
 | Recognition, 8 steps | 1.000 | Bayes 1.000 |
-| Policy KL (nats) | 0.051 ± 0.006 | 0 |
-| Closed-loop agreement | 0.858 ± 0.003 | experts 0.882 |
-| Online tracking under switches | 0.963 ± 0.000 | Bayes filter 0.968 |
+| Policy KL (nats) | 0.050 ± 0.004 | 0 |
+| Closed-loop agreement | 0.859 ± 0.001 | experts 0.882 |
+| Online tracking under switches | 0.962 ± 0.000 | Bayes filter 0.968 |
 
 <p align="center">
   <img src="figures/options.png" width="45%" alt="Recognized options in a PCA projection, coloured by the hidden expert">
@@ -475,9 +475,9 @@ full settings. Results are mean ± standard deviation over three seeds.
 against the Bayes rate as evidence accumulates.*
 
 The four experts are recovered as four clusters. Early in training they form a compass:
-$`\cos(z_{\text{away}}, z_{\text{toward}}) = -0.988 \pm 0.003`$ after 1k steps, so opposite
+$`\cos(z_{\text{away}}, z_{\text{toward}}) = -0.98 \pm 0.03`$ after 1k steps, so opposite
 behaviours are opposite vectors. Longer training spreads the options over more of the
-eight dimensions (−0.62 ± 0.07 at 10k steps), and policy KL falls in the same period
+eight dimensions (−0.59 ± 0.02 at 10k steps), and policy KL falls in the same period
 from 0.59 to 0.05.
 
 ### 5.3 Composition
@@ -486,8 +486,8 @@ Adding two discovered options produces their product of experts *zero-shot*.
 
 | Composition | Heading error vs the exact product of experts |
 |---|---|
-| Experts 90° apart: $`z_i + z_j`$ | 4.6 ± 0.1° |
-| Weighted: $`z_i + w z_j`$, $`w \in \lbrace \tfrac14, \tfrac12, 2, 4\rbrace`$ | 4.8 ± 0.4° |
+| Experts 90° apart: $`z_i + z_j`$ | 4.5 ± 0.3° |
+| Weighted: $`z_i + w z_j`$, $`w \in \lbrace \tfrac14, \tfrac12, 2, 4\rbrace`$ | 5.1 ± 0.3° |
 
 Sums of opposite experts lose their heading preference, as the product of opposite
 von Mises-like policies should.
@@ -598,15 +598,16 @@ $`H = 40`$, and replanning every $`R = 5`$ steps. Results are over 64 episodes �
 |---|---|
 | Always "toward" | 0% |
 | CEM over raw action sequences ($`80`$ dimensions) | 1.6% |
-| CEM over options ($`8`$ dimensions) | 47 ± 5% |
-| Library and its pairwise sums ($`10`$ candidates) | **88 ± 2%** |
+| CEM over options ($`8`$ dimensions) | 46 ± 8% |
+| Library and its pairwise sums ($`10`$ candidates) | **85 ± 3%** |
 
 <p align="center">
   <img src="figures/downstream_cup.png" width="70%" alt="Planner trajectories around the cup obstacle">
 </p>
 
-On an easier obstacle (a single disc), every planner succeeds. The option planners reach
-the target in about 45 steps, against 59–90 for raw actions. With a horizon of 20, no
+On an easier obstacle (a single disc), every planner succeeds in at least 99% of
+episodes. The option planners reach the target in about 45 steps, against 59–90 for raw
+actions. With a horizon of 20, no
 planner escapes the cup, because a myopic cost cannot see the way out. The discrete
 library beats CEM over $`z`$: its candidates are meaningful behaviours by construction,
 whereas a Gaussian search over $`z`$ spends its budget on weak, low-norm options.
@@ -751,10 +752,11 @@ same expression. ∎
 | Data | 4,096 training and 512 validation trajectories of 64 steps |
 | Throughput | ≈29 steps/s on one NVIDIA GB10 (TF32) |
 
-The 10k-step runs of §5.2–5.3 were trained before two numerical refinements: the
-tie-breaking line search of §3.2, and 8 rather than 10 Newton iterations. Together these
-change recognized options by about $`10^{-4}`$ relative. All reported evaluations use the
-final code.
+Three runs predate two numerical refinements, the tie-breaking line search of §3.2 and 8
+rather than 10 Newton iterations: the single-seed ablations of §5.4 (unbounded features,
+two-dimensional options, joint features) and seed 0 of the EM variant. The refinements
+change recognized options by about $`10^{-4}`$ relative. Every other run uses the final
+code, and all reported evaluations do.
 
 Code, configurations and experiment scripts are in this repository:
 

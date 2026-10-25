@@ -62,16 +62,16 @@ Default preset (`jem`), 10k steps, 3 seeds, about 6–7 minutes per run on a DGX
 | | |
 |---|---|
 | Options rediscovered without labels (NMI of clustered z vs hidden expert) | 1.00 |
-| Recognition accuracy from 1 / 2 / 4 / 8 steps (Bayes rate on the same snippets: 0.90 / 0.97 / 1.00 / 1.00) | 0.89 / 0.97 / 1.00 / 1.00 |
+| Recognition accuracy from 1 / 2 / 4 / 8 steps (Bayes rate on the same snippets: 0.902 / 0.974 / 0.999 / 1.000) | 0.895 / 0.966 / 0.996 / 1.000 |
 | Policy KL(expert ‖ option), nats | 0.05 |
-| Zero-shot composition z_i + z_j vs the exact product of experts | 4.6° heading error |
-| Weighted composition z_i + w z_j, w ∈ {¼, ½, 2, 4} | 4.8° heading error |
-| Online tracking of hidden option switches (HMM over the library; Bayes 0.968) | 0.963 |
+| Zero-shot composition z_i + z_j vs the exact product of experts | 4.5° heading error |
+| Weighted composition z_i + w z_j, w ∈ {¼, ½, 2, 4} | 5.1° heading error |
+| Online tracking of hidden option switches (HMM over the library; Bayes 0.968) | 0.962 |
 | Closed-loop agreement with the matched expert (experts' own value: 0.882) | 0.86 |
 
 Early in training, the options organize into a 2-D compass in which opposite
-behaviours are opposite vectors: cos(z_away, z_toward) ≈ −0.99 at 1k steps. Longer
-training spreads them over more dimensions (−0.62 at 10k steps), trading that clean
+behaviours are opposite vectors: cos(z_away, z_toward) ≈ −0.98 at 1k steps. Longer
+training spreads them over more dimensions (−0.59 at 10k steps), trading that clean
 geometry for a sharper fit.
 
 ![compositions](docs/figures/compositions.png)
@@ -87,8 +87,8 @@ target gets trapped every time.
 |---|---|
 | always "toward" | 0% |
 | CEM over raw action sequences | 2% |
-| CEM over the continuous option space | 47% |
-| best of the discovered options and their pairwise sums | **88%** |
+| CEM over the continuous option space | 46% |
+| best of the discovered options and their pairwise sums | **85%** |
 
 ![downstream](docs/figures/downstream_cup.png)
 
