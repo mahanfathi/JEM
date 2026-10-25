@@ -34,6 +34,9 @@ option z. Four things follow:
   the next 8 held-out steps. Only behaviour that persists over time helps with that
   prediction, which is what turns z into an option.
 
+A paper-style write-up, with the math, proofs and pseudo-code, is in
+[`docs/paper.md`](docs/paper.md).
+
 The method descends from Mordatch's *Concept Learning with Energy-Based Models* (2018)
 and *Implicit Behavioral Cloning* (Florence et al., 2021). The repo is a 2026 PyTorch
 rewrite of a 2022 JAX prototype (tag `legacy-jax-2022`). That prototype's algorithm is
