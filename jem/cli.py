@@ -114,13 +114,14 @@ def _downstream(args) -> None:
 
 def _record(args) -> None:
     from jem.options import OptionLibrary
-    from jem.record import record_options, record_planning
+    from jem.record import record_options, record_planning, record_recognition
 
     lib = OptionLibrary.load(args.run)
     if lib.world.name != "panda":
         raise SystemExit("recordings are rendered for arm runs (world 'panda')")
     out = Path(args.out)
     paths = record_options(lib, out, steps=args.steps, seed=args.seed, fmt=args.format)
+    paths.append(record_recognition(lib, out, seed=args.seed, fmt=args.format))
     if args.episodes > 0:
         paths.append(
             record_planning(lib, out, args.episodes, args.planner, seed=args.seed, fmt=args.format)

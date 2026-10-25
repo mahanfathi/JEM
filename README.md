@@ -31,6 +31,21 @@ were attached after training, by matching options to the hidden expert labels.
 
 ![six discovered options](docs/media/options.webp)
 
+**Recognizing:** a demonstration whose expert switches every 1.5 s, unlabelled. The trail
+and the shaded row show the expert that is acting, which JEM never sees. After each step
+JEM updates its belief over the six options (bars), under a prior that the expert
+switches with probability 1/16 per step. The ticks show the Bayes filter, which uses the
+experts' true densities under the same prior, and the timeline keeps both beliefs under
+the acting expert. Both rank the acting expert first at 177 of the 180 steps; the three
+misses are the first step after three of the five switches. The order of experts was
+chosen for a path that never retraces itself and for switches the Bayes filter picks up
+within a step, not for JEM's score. Random demonstrations switch more often, every 0.8 s
+on average, and most misses fall on the first step or two after a switch: on 256 of them
+(3.2 s each, the same 256 for each of 3 seeds), JEM tracks the acting expert at 94.3% of
+steps, against 94.8% for the Bayes filter.
+
+![online recognition of a demonstration that switches experts](docs/media/recognition.webp)
+
 **Composing concurrently:** adding two option vectors gives behaviour that no
 demonstration contains. From the experts' start, *away* + *cw* backs off while turning
 about the axis, *cw* + *up* rises while turning about it, and *toward* + *up* climbs
@@ -183,7 +198,8 @@ Preset `panda`, 10k steps, 3 seeds:
 | Closed-loop agreement with the matched expert (experts' own: 0.688) | 0.686 |
 
 The animations in [The arm in motion](#the-arm-in-motion) show these experts, the
-discovered options, sums of options, and the planner's executed paths.
+discovered options, online recognition of a demonstration that switches experts, sums of
+options, and the planner's executed paths.
 
 ![arm option rollouts](docs/figures/arm_rollouts.png)
 ![arm compositions](docs/figures/arm_compositions.png)
@@ -231,7 +247,7 @@ uv run jem train --preset jem --set model.option_dim=2 env.switch_prob=0.03 obje
 uv run jem eval runs/<run_id> --figures out/          # re-evaluate a checkpoint
 uv run jem downstream runs/<run_id> --task cup --horizon 40     # particle: circle | cup
 uv run jem downstream runs/<run_id> --task bin --horizon 40     # arm: bin | pillar
-uv run jem record runs/<arm run_id> --out media/      # arm animations: experts, options, sums, planning
+uv run jem record runs/<arm run_id> --out media/      # arm animations, as shown above
 uv run jem table                                      # markdown table of all runs (seeds pooled)
 ./experiments/phase1.sh                               # the experiment suites (phase1-4)
 uv run pytest
