@@ -30,7 +30,15 @@ from jem.figures import SERIES  # noqa: E402
 TARGET = (0.9, 0.12, 0.12, 1.0)
 NEW = 6  # SERIES colour of behaviour nobody demonstrated: sums of options, planned paths
 INK, PAPER = (24, 24, 24), (250, 250, 250)
-COMPOSITIONS = (("toward", "cw"), ("cw", "up"), ("toward", "up"), ("up", "down"))
+# Sums of options and their shapes: spirals in and out, a helix, a diagonal, two that cancel.
+COMPOSITIONS = (
+    ("toward", "cw"),
+    ("away", "cw"),
+    ("cw", "up"),
+    ("toward", "up"),
+    ("toward", "away"),
+    ("up", "down"),
+)
 # Camera (lookat offset from the target, distance, azimuth, elevation) per recording.
 CAMERAS = {
     "free": ((-0.15, 0.0, 0.05), 1.85, 205.0, -40.0),
@@ -247,7 +255,7 @@ def record_options(
     return [
         save_animation(tile(experts, 3), out / f"experts.{fmt}"),
         save_animation(tile(options, 3), out / f"options.{fmt}"),
-        save_animation(tile(comps, 2), out / f"compositions.{fmt}"),
+        save_animation(tile(comps, 3), out / f"compositions.{fmt}"),
     ]
 
 

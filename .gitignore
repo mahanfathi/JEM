@@ -10,6 +10,9 @@ dist/
 
 # Experiment artifacts (local dashboard reads these)
 runs/
+# Default outputs of `jem record` and `jem eval --figures` at the repository root
+/media/
+/out/
 
 # Editors / OS
 .vscode/

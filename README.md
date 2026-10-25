@@ -12,7 +12,45 @@ with a single energy function E(s, z, a). That one function does three jobs:
 There are two testbeds, with exact expert densities in both: a 2-D particle, and a
 7-DoF Franka Panda arm simulated on the GPU with MuJoCo Warp.
 
-![options](docs/figures/options.png)
+## The arm in motion
+
+Each episode is simulated with MuJoCo Warp and plays in real time. The red sphere is the
+target. The hand leaves a trail in its option's colour, or in violet for behaviour that
+no demonstration contains.
+
+**What JEM sees:** demonstrations from six noisy scripted experts, without labels: joint
+angles, hand and target positions, and the joint velocity commands taken (no images).
+The experts move the hand horizontally toward or away from the target's vertical axis,
+around that axis clockwise (*cw*) or counter-clockwise (*ccw*), or up and down.
+
+![six experts](docs/media/experts.webp)
+
+**What it learns:** six options (their number is set by hand), found without labels.
+Each runs as a policy from the experts' start and moves like its expert. The panel names
+were attached after training, by matching options to the hidden expert labels.
+
+![six discovered options](docs/media/options.webp)
+
+**Composing concurrently:** adding two option vectors gives behaviour that no
+demonstration contains. From the experts' start, *away* + *cw* backs off while turning
+about the axis, *cw* + *up* rises while turning about it, and *toward* + *up* climbs
+diagonally to a point above the target. *toward* + *cw* also turns on its way in, though
+in 4 s its path looks almost straight. Opposite options cancel: the hand drifts a few
+centimetres, against 27–60 cm for a single option.
+
+![sums of options](docs/media/compositions.webp)
+
+**Composing over time:** a planner searches the continuous option space with CEM
+(*option-cem* in the panels), replanning every 0.25 s from rollouts in the simulator. It
+reaches into a bin and around a pillar, obstacles absent from every demonstration and
+drawn see-through so the paths inside and behind them stay visible. Three episodes per
+task are shown, not selected; a panel's clock stops when the hand comes within 4 cm of
+the target, which counts as success. Over 64 episodes × 3 seeds with a 2 s planning
+horizon, this planner succeeds on 85% of bin and 81% of pillar episodes, against 0% and
+4% for the same search over raw joint commands (on the pillar with a 1 s horizon: 65%
+against 23%).
+
+![paths executed by the option planner](docs/media/plan-option-cem.webp)
 
 ## The idea
 
@@ -45,7 +83,7 @@ and *Implicit Behavioral Cloning* (Florence et al., 2021). The repo is a 2026 Py
 rewrite of a 2022 JAX prototype (tag `legacy-jax-2022`). That prototype's algorithm is
 available as the `legacy` preset.
 
-## Testbed
+## The particle testbed
 
 A 2-D particle and a target. Four noisy scripted experts:
 
@@ -58,7 +96,7 @@ Each has heading noise of 0.5 rad, so one step is ambiguous, and its action dens
 known in closed form. Every metric is therefore absolute: the true KL, the Bayes rate,
 and the exact product of experts.
 
-## Results
+## Results on the particle
 
 Default preset (`jem`), 10k steps, 3 seeds, about 6–7 minutes per run on a DGX Spark (GB10):
 
@@ -71,6 +109,8 @@ Default preset (`jem`), 10k steps, 3 seeds, about 6–7 minutes per run on a DGX
 | Weighted composition z_i + w z_j, w ∈ {¼, ½, 2, 4} | 5.1° heading error |
 | Online tracking of hidden option switches (HMM over the library; Bayes 0.968) | 0.962 |
 | Closed-loop agreement with the matched expert (experts' own value: 0.882) | 0.86 |
+
+![options](docs/figures/options.png)
 
 Early in training, the options organize into a 2-D compass in which opposite
 behaviours are opposite vectors: cos(z_away, z_toward) ≈ −0.98 at 1k steps. Longer
@@ -142,15 +182,8 @@ Preset `panda`, 10k steps, 3 seeds:
 | Online tracking of hidden switches (Bayes 0.948) | 0.943 |
 | Closed-loop agreement with the matched expert (experts' own: 0.688) | 0.686 |
 
-The six experts, then the six discovered options run as policies from the same start
-(each hand trail in its option's colour; the red sphere is the target):
-
-![arm experts](docs/media/experts.webp)
-![arm options](docs/media/options.webp)
-
-Sums of two options, which no demonstration contains:
-
-![arm sums of options](docs/media/compositions.webp)
+The animations in [The arm in motion](#the-arm-in-motion) show these experts, the
+discovered options, sums of options, and the planner's executed paths.
 
 ![arm option rollouts](docs/figures/arm_rollouts.png)
 ![arm compositions](docs/figures/arm_compositions.png)
@@ -168,11 +201,10 @@ rollouts per decision; 64 episodes × 3 seeds:
 | the same search with the true experts | 44% | 34% | 10% |
 | CEM over the continuous option space | **65%** | **81%** | **85%** |
 
-The discovered library plans as well as the true experts do. Searching the continuous
-option space plans best, because it can blend behaviours for the final approach. Below are
-the paths it executes in three episodes of each task (obstacles drawn see-through):
+The discovered library plans about as well as the true experts do: better around the
+pillar, a little worse in the bin. Searching the continuous option space plans best,
+because it can blend behaviours for the final approach.
 
-![arm planning, executed paths](docs/media/plan-option-cem.webp)
 ![arm planning](docs/figures/arm_downstream_bin.png)
 
 The arm model (`jem/envs/assets/panda.xml`) is a mesh-free version of the Panda in
