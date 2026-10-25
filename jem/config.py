@@ -302,17 +302,23 @@ def _leaves(prefix: str, values: dict[str, Any]):
             yield f"{prefix}.{key}", tuple(value) if isinstance(value, list) else value
 
 
+# Options that were tried and removed, with the value that means "not used".
+REMOVED = {"model.center": False, "model.base_energy": False, "objective.base": "uniform"}
+
+
 def from_dict(d: dict[str, Any]) -> Config:
     """Rebuild a Config from `Config.to_dict()` output (e.g. a run's config.json).
 
-    Keys of options that have since been removed are skipped with a warning, so old runs
-    stay loadable.
+    Keys of options that have since been removed are skipped, silently when they hold
+    their neutral value, with a warning otherwise, so old runs stay loadable.
     """
     cfg = Config(name=d.get("name", "jem"))
     for section, values in d.items():
         if section == "name" or not isinstance(values, dict):
             continue
         for key, value in _leaves(section, values):
+            if key in REMOVED and value == REMOVED[key]:
+                continue
             try:
                 _set(cfg, key, value)
             except (KeyError, AttributeError):
