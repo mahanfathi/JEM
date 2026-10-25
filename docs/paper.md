@@ -94,15 +94,20 @@ On top of this structure we learn by **held-out prediction**: infer the option f
 context, score the later steps of the same demonstration. This is what makes the latent
 an *option*, since only behaviour that persists helps predict the future. It is also a
 proper scoring rule, so it calibrates the temperature $`\beta`$. Gradients through the
-inferred option are exact and nearly free (Proposition 4). No sampler is ever run during
-training.
+inferred option are exact and nearly free, by a known one-step identity
+(Proposition 4). No sampler is ever run during training.
 
-**Contributions.**
+**Contributions.** Each ingredient has precedent (§6); what is new is how they fit
+together for options.
 
-- The option-linear energy, and its consequences for composition, inference and
-  stability (§3.1–3.2).
-- A sampler-free learning rule: held-out prediction with exact implicit gradients
-  through convex recognition (§3.3–3.4).
+- A formulation in which the option is the natural parameter of a learned exponential
+  family over actions (§3.1). Its consequences for composition, recognition and
+  stability are standard exponential-family facts; the contribution is a formulation
+  under which they hold for options discovered from unlabelled data.
+- A sampler-free learning rule: options are recognized exactly by Newton's method, not
+  by an amortized encoder, and trained through that recognition by held-out prediction,
+  which is what makes them persist in time (§3.2–3.4). The gradient uses a known
+  one-step identity [Pineda et al., 2022; Bolte et al., 2023].
 - Two temporal extensions: hazard-aware learning when options switch, and online
   option tracking with an HMM over the discovered library (§3.6).
 - An evaluation against *absolute* references (Bayes rates, true KL, exact products of
@@ -148,6 +153,9 @@ With the energy (1), the option policy and its log-partition function are
 There is deliberately no option-independent base energy. The option $`z = 0`$ is the
 uniform policy, so the data can only be explained *through* $`z`$, and a latent that
 carries no information is never optimal.
+
+Propositions 1–3 are standard exponential-family facts [Wainwright & Jordan, 2008]. We
+state them because the rest of the method rests on them.
 
 **Proposition 1 (composition).** For options $`z_1, \dots, z_n`$ and real weights
 $`w_1, \dots, w_n`$,
@@ -272,7 +280,7 @@ $`\mathrm{d}\hat z / \mathrm{d}\theta = -H^{-1} \, \partial_\theta \nabla_z \hat
 $`H = \nabla^2_z \hat F_C(\hat z)`$ a small $`d \times d`$ matrix. A single extra Newton step
 realizes this exactly.
 
-**Proposition 4 (one-step implicit gradient).** Let $`\bar z = \mathrm{sg}(\hat z)`$ and
+**Proposition 4 (one-step implicit gradient; Pineda et al., 2022, Prop. 1).** Let $`\bar z = \mathrm{sg}(\hat z)`$ and
 $`\bar H = \mathrm{sg}\big(\nabla_z^2 \hat F_C(\bar z)\big)`$, and define
 
 ```math
@@ -282,6 +290,12 @@ $`\bar H = \mathrm{sg}\big(\nabla_z^2 \hat F_C(\bar z)\big)`$, and define
 
 Then $`\check z = \hat z`$ in value, and
 $`\partial \check z / \partial \theta = \mathrm{d}\hat z / \mathrm{d}\theta`$.
+
+This identity is known. Theseus uses it as its implicit backward mode
+[Pineda et al., 2022], and Bolte et al. [2023] show that one-step differentiation of
+Newton's method recovers the implicit Jacobian at the solution. We restate it because it
+is what makes training cheap here, and it is exact in practice because the inner problem
+is solved to high precision (§3.2).
 
 Backpropagation therefore never unrolls the solver. It needs one gradient evaluation at
 the optimum and one $`d \times d`$ solve. Dropping the correction, $`\check z = \bar z`$,
@@ -616,43 +630,143 @@ whereas a Gaussian search over $`z`$ spends its budget on weak, low-norm options
 
 ## 6 Related work
 
-**Energy-based concepts and composition.** Mordatch [2018] introduced the
-recognize-by-minimizing, generate-by-minimizing view that we adopt. Products of
-experts [Hinton, 2002] and compositional energy-based generation [Du et al., 2020]
-motivate composition by adding energies. Training such models with short-run MCMC
-yields samplers rather than densities [Nijkamp et al., 2019]. It also needs care to stay
-stable: energy regularization and spectral normalization [Du & Mordatch, 2019], and
-entropy terms when differentiating through chains [Du et al., 2021]. We avoid samplers
-during training altogether.
+Each ingredient of the method has a long history. We group the closest work by what it
+shares with ours and say what differs.
+
+**Energy-based concepts.** Mordatch [2018] introduced the recognize-by-minimizing,
+generate-by-minimizing view that we adopt, and COMET [Du et al., 2021a] discovers
+compositional energy concepts without labels. Both infer latents by gradient descent on
+a non-convex energy and train with Langevin samplers. Short-run MCMC of this kind yields
+samplers rather than densities [Nijkamp et al., 2019], and it needs care to stay stable:
+energy regularization and spectral normalization [Du & Mordatch, 2019], and entropy terms
+when differentiating through chains [Du et al., 2021b].
+
+- Conjugate EBMs [Wu et al., 2021] use the same form as (1): an energy linear in a latent
+  natural parameter, with neural sufficient statistics. They normalize jointly over the
+  data and train with SGLD. We normalize per state over actions, so recognition is
+  convex and training needs no sampler.
+- Input-convex networks [Amos et al., 2017] make inference convex by constraining
+  weights. Here convexity comes from linearity in $`z`$ alone.
+- In motion modelling, factored conditional RBMs [Taylor & Hinton, 2009] let a style
+  variable gate the interactions of an energy over motion, so that styles can be
+  blended.
+
+**Log-linear behaviour with a latent parameter.** With fixed features, (2) with one $`z`$
+per individual is the mixed, or random-coefficient, logit of discrete choice
+[McFadden & Train, 2000]. There, a person's taste vector is dotted with each
+alternative's attributes and estimated from their repeated choices. In imitation:
+
+- MaxEnt IRL [Ziebart et al., 2008] is an exponential family over trajectories whose
+  natural parameter is a reward-weight vector. Its likelihood gradient is the
+  moment-matching residual of (5).
+- Multi-intention IRL clusters unlabelled demonstrations by such weight vectors
+  [Babeş-Vroman et al., 2011]. Intentions that switch within a trajectory have been
+  inferred with EM [Zhu et al., 2024].
+- Arora et al. [2020] learn a shared representation with a log-linear head for each
+  expert, from demonstrations grouped by expert.
+
+Our model is the one-step ($`\gamma = 0`$) case of this family, with three differences:
+the features are learned from scratch, actions are continuous and normalized by
+proposals, and the latent is never given by labels but inferred and trained through.
+
+**Convex inner problems in meta-learning.** Recognize-then-score is the support/query
+structure of meta-learning.
+
+- Bertinetto et al. [2019] fit a ridge-regression head (R2-D2) or a logistic-regression
+  head (LR-D2, by Newton's method) on learned features from a support set, and score a
+  query set, over discrete classes.
+- MetaOptNet [Lee et al., 2019] differentiates implicitly through a convex head.
+- ALPaCA [Harrison et al., 2018] computes a closed-form posterior over a linear head from
+  the start of a sequence and scores the points that follow.
+- CAVIA [Zintgraf et al., 2019] adapts a context vector by gradient steps. Conditional
+  neural processes [Garnelo et al., 2018] amortize the same context-to-target
+  prediction with an encoder.
+
+In this language an option is the weight vector of a softmax head over continuous
+actions, and its support set is the context window. What the held-out split adds in our
+setting is temporal persistence.
+
+**Implicit differentiation.** Gradients through argmin layers follow from the implicit
+function theorem [Amos & Kolter, 2017; Rajeswaran et al., 2019; Bai et al., 2019].
+Proposition 4 is a known identity. Theseus [Pineda et al., 2022, Prop. 1] obtains
+implicit gradients by differentiating one Newton step at the optimum with the Hessian
+held constant. Bolte et al. [2023] analyse one-step differentiation and show that it is
+exact for Newton's method at a solution. Jacobian-free backpropagation
+[Fung et al., 2022] is the fixed-point analogue.
 
 **Implicit policies.** Implicit behavioural cloning [Florence et al., 2021] trains energy
-policies with InfoNCE against uniform counter-examples, our action-likelihood estimator.
-Ta et al. [2022] analyse the gap between the theory and practice of such policies. Our
-contribution is the latent option structure on top: linearity in $`z`$, convex
-recognition, and held-out prediction.
+policies with InfoNCE against uniform counter-examples, which is our action-likelihood
+estimator. Ranking-based NCE is consistent for conditional models
+[Ma & Collins, 2018], which justifies (9) as a likelihood surrogate. Ta et al. [2022]
+analyse the gap between the theory and practice of such policies. Their main
+limitation, proposal quality in high action dimensions, is also ours (§7).
 
-**Option and skill discovery.** Options [Sutton et al., 1999] are commonly discovered by
-segmenting demonstrations with latent-variable models:
+**Composing policies.** Proposition 1, a weighted product of policies, has precedents:
+
+- ProMPs co-activate movement primitives this way [Paraschos et al., 2013], and MCP
+  combines Gaussian primitives the same way [Peng et al., 2019].
+- Composable energy policies [Urain et al., 2021] sample from products of energy-based
+  policies.
+- Diffusion policies compose by summing scores [Ajay et al., 2023; Wang et al., 2024].
+
+Vector arithmetic over behaviours also has precedents:
+
+- Compositional plan vectors [Devin et al., 2019] train task embeddings to add.
+- In successor features and the option keyboard [Barreto et al., 2017; 2019], and in
+  forward–backward representations [Touati & Ollivier, 2021], rewards, and therefore
+  tasks, are linear in a vector.
+- Concurrently, Wu et al. [2026] learn a transition energy affine in a skill vector
+  produced by an encoder, and compose skills on a humanoid by adding vectors.
+
+The closure in Proposition 1 is exact for policies, not for the tasks they solve.
+Summing soft Q-functions, or multiplying Boltzmann policies, is in general suboptimal for
+the combined objective [Haarnoja et al., 2018; Hunt et al., 2019]. What our setting adds
+is recognition: the vectors we compose are inferred exactly, by convex optimization in
+the energy that acts, rather than produced by an encoder.
+
+**Option and skill discovery.** Options [Sutton et al., 1999] are commonly discovered
+from demonstrations with latent-variable models:
 
 - DDO [Fox et al., 2017] and CompILE [Kipf et al., 2019] segment demonstrations;
-- OPAL [Ajay et al., 2021] learns offline latent primitives;
-- unsupervised skill discovery maximizes mutual information [Eysenbach et al., 2019].
+- OPAL [Ajay et al., 2021] and learning from play [Lynch et al., 2019] encode windows
+  into latent primitives or plans;
+- unsupervised skill discovery maximizes mutual information [Eysenbach et al., 2019];
+- behaviour foundation models infer a task vector from a few unlabelled
+  demonstrations [Pirotta et al., 2024].
 
-These methods use explicit, amortized posteriors and normalized decoders. Here,
-recognition is exact convex inference in the same energy that acts, and composition is
-algebraic.
+Recognition in these methods is amortized, done by EM over discrete options, or done by
+non-convex optimization. Ours is exact convex inference in the energy that acts.
 
-**Implicit differentiation.** Differentiating through optimizers via the implicit
-function theorem underlies OptNet [Amos & Kolter, 2017], implicit MAML
-[Rajeswaran et al., 2019], and deep equilibrium models [Bai et al., 2019]. Our one-step
-identity (Proposition 4) is the Newton analogue of Jacobian-free backpropagation
-[Fung et al., 2022]. In our setting it is exact, because the inner problem is solved to
-optimality.
+**Planning over skills.** Planning in a learned skill space rather than over raw actions
+is established:
 
-**Exponential families.** The convexity of log-partition functions and moment matching
-are classical [Wainwright & Jordan, 2008]. The novelty is treating the *option* as the
-natural parameter of a learned family over actions. Grathwohl et al. [2020] read a
-classifier's logits as a joint energy, a discrete special case of the same linear form.
+- DADS [Sharma et al., 2020] runs model-predictive control over skills;
+- latent skill planning [Xie et al., 2021] runs the cross-entropy method over skill
+  latents;
+- hierarchical policy blending [Hansel et al., 2023] plans over the weights of a product
+  of policies.
+
+§5.7 confirms the effect in our setting. It is not a contribution in itself.
+
+**Exponential families and contrastive features.** Several pieces are classical:
+
+- Convex log-partition functions and moment matching [Wainwright & Jordan, 2008].
+- A natural parameter formed as a latent dotted with a basis, as in exponential-family
+  PCA [Collins et al., 2001].
+- Unit-norm features with a learned temperature, which are the von Mises–Fisher reading
+  of contrastive learning [Zimmermann et al., 2021] and bound the logits as in
+  Proposition 3.
+- Grathwohl et al. [2020] read a classifier's logits as a joint energy, a discrete
+  special case of the same linear form.
+
+**Summary.** Each ingredient above is known. To our knowledge, their combination is not:
+
+- the option is the natural parameter of a learned, per-state exponential family over
+  continuous actions;
+- it is recognized exactly, by convex optimization in the energy that acts, rather than
+  by an encoder or a sampler;
+- it is trained through that recognition by held-out prediction, which is what makes
+  the latent persist in time.
 
 ---
 
@@ -678,29 +792,65 @@ classifier's logits as a joint energy, a discrete special case of the same linea
 
 ## References
 
+- Ajay, A., Du, Y., Gupta, A., Tenenbaum, J., Jaakkola, T., & Agrawal, P. (2023). Is conditional generative modeling all you need for decision-making? *ICLR*.
 - Ajay, A., Kumar, A., Agrawal, P., Levine, S., & Nachum, O. (2021). OPAL: Offline primitive discovery for accelerating offline reinforcement learning. *ICLR*.
 - Amos, B., & Kolter, J. Z. (2017). OptNet: Differentiable optimization as a layer in neural networks. *ICML*.
+- Amos, B., Xu, L., & Kolter, J. Z. (2017). Input convex neural networks. *ICML*.
+- Arora, S., Du, S. S., Kakade, S., Luo, Y., & Saunshi, N. (2020). Provable representation learning for imitation learning via bi-level optimization. *ICML*.
+- Babeş-Vroman, M., Marivate, V., Subramanian, K., & Littman, M. (2011). Apprenticeship learning about multiple intentions. *ICML*.
 - Bai, S., Kolter, J. Z., & Koltun, V. (2019). Deep equilibrium models. *NeurIPS*.
+- Barreto, A., Borsa, D., Hou, S., Comanici, G., Aygün, E., Hamel, P., Toyama, D., Hunt, J., Mourad, S., Silver, D., & Precup, D. (2019). The option keyboard: Combining skills in reinforcement learning. *NeurIPS*.
+- Barreto, A., Dabney, W., Munos, R., Hunt, J. J., Schaul, T., van Hasselt, H., & Silver, D. (2017). Successor features for transfer in reinforcement learning. *NIPS*.
+- Bertinetto, L., Henriques, J. F., Torr, P. H. S., & Vedaldi, A. (2019). Meta-learning with differentiable closed-form solvers. *ICLR*.
+- Bolte, J., Pauwels, E., & Vaiter, S. (2023). One-step differentiation of iterative algorithms. *NeurIPS*.
+- Collins, M., Dasgupta, S., & Schapire, R. E. (2001). A generalization of principal components analysis to the exponential family. *NIPS*.
 - Cranley, R., & Patterson, T. N. L. (1976). Randomization of number theoretic methods for multiple integration. *SIAM Journal on Numerical Analysis*.
+- Devin, C., Geng, D., Abbeel, P., Darrell, T., & Levine, S. (2019). Compositional plan vectors. *NeurIPS*.
 - Du, Y., Li, S., & Mordatch, I. (2020). Compositional visual generation with energy based models. *NeurIPS*.
-- Du, Y., Li, S., Tenenbaum, J., & Mordatch, I. (2021). Improved contrastive divergence training of energy-based models. *ICML*.
+- Du, Y., Li, S., Sharma, Y., Tenenbaum, J. B., & Mordatch, I. (2021a). Unsupervised learning of compositional energy concepts. *NeurIPS*.
+- Du, Y., Li, S., Tenenbaum, J., & Mordatch, I. (2021b). Improved contrastive divergence training of energy-based models. *ICML*.
 - Du, Y., & Mordatch, I. (2019). Implicit generation and modeling with energy based models. *NeurIPS*.
 - Eysenbach, B., Gupta, A., Ibarz, J., & Levine, S. (2019). Diversity is all you need: Learning skills without a reward function. *ICLR*.
 - Florence, P., Lynch, C., Zeng, A., Ramirez, O., Wahid, A., Downs, L., Wong, A., Lee, J., Mordatch, I., & Tompson, J. (2021). Implicit behavioral cloning. *CoRL*.
 - Fox, R., Krishnan, S., Stoica, I., & Goldberg, K. (2017). Multi-level discovery of deep options. *arXiv:1703.08294*.
 - Fung, S. W., Heaton, H., Li, Q., McKenzie, D., Osher, S., & Yin, W. (2022). JFB: Jacobian-free backpropagation for implicit networks. *AAAI*.
+- Garnelo, M., Rosenbaum, D., Maddison, C. J., Ramalho, T., Saxton, D., Shanahan, M., Teh, Y. W., Rezende, D. J., & Eslami, S. M. A. (2018). Conditional neural processes. *ICML*.
 - Grathwohl, W., Wang, K.-C., Jacobsen, J.-H., Duvenaud, D., Norouzi, M., & Swersky, K. (2020). Your classifier is secretly an energy based model and you should treat it like one. *ICLR*.
 - Gutmann, M., & Hyvärinen, A. (2010). Noise-contrastive estimation: A new estimation principle for unnormalized statistical models. *AISTATS*.
+- Haarnoja, T., Pong, V., Zhou, A., Dalal, M., Abbeel, P., & Levine, S. (2018). Composable deep reinforcement learning for robotic manipulation. *ICRA*.
+- Hansel, K., Urain, J., Peters, J., & Chalvatzaki, G. (2023). Hierarchical policy blending as inference for reactive robot control. *ICRA*.
+- Harrison, J., Sharma, A., & Pavone, M. (2018). Meta-learning priors for efficient online Bayesian regression. *WAFR*.
 - Hinton, G. E. (2002). Training products of experts by minimizing contrastive divergence. *Neural Computation*.
+- Hunt, J. J., Barreto, A., Lillicrap, T. P., & Heess, N. (2019). Composing entropic policies using divergence correction. *ICML*.
 - Kipf, T., Li, Y., Dai, H., Zambaldi, V., Sanchez-Gonzalez, A., Grefenstette, E., Kohli, P., & Battaglia, P. (2019). CompILE: Compositional imitation learning and execution. *ICML*.
+- Lee, K., Maji, S., Ravichandran, A., & Soatto, S. (2019). Meta-learning with differentiable convex optimization. *CVPR*.
+- Lynch, C., Khansari, M., Xiao, T., Kumar, V., Tompson, J., Levine, S., & Sermanet, P. (2019). Learning latent plans from play. *CoRL*.
+- Ma, Z., & Collins, M. (2018). Noise contrastive estimation and negative sampling for conditional models: Consistency and statistical efficiency. *EMNLP*.
+- McFadden, D., & Train, K. (2000). Mixed MNL models for discrete response. *Journal of Applied Econometrics*.
 - Mordatch, I. (2018). Concept learning with energy-based models. *arXiv:1811.02486*.
 - Nijkamp, E., Hill, M., Zhu, S.-C., & Wu, Y. N. (2019). Learning non-convergent non-persistent short-run MCMC toward energy-based model. *NeurIPS*.
+- Paraschos, A., Daniel, C., Peters, J., & Neumann, G. (2013). Probabilistic movement primitives. *NIPS*.
+- Peng, X. B., Chang, M., Zhang, G., Abbeel, P., & Levine, S. (2019). MCP: Learning composable hierarchical control with multiplicative compositional policies. *NeurIPS*.
+- Pineda, L., Fan, T., Monge, M., Venkataraman, S., Sodhi, P., Chen, R. T. Q., Ortiz, J., DeTone, D., Wang, A., Anderson, S., Dong, J., Amos, B., & Mukadam, M. (2022). Theseus: A library for differentiable nonlinear optimization. *NeurIPS*.
+- Pirotta, M., Tirinzoni, A., Touati, A., Lazaric, A., & Ollivier, Y. (2024). Fast imitation via behavior foundation models. *ICLR*.
 - Rajeswaran, A., Finn, C., Kakade, S., & Levine, S. (2019). Meta-learning with implicit gradients. *NeurIPS*.
 - Rubinstein, R. (1999). The cross-entropy method for combinatorial and continuous optimization. *Methodology and Computing in Applied Probability*.
+- Sharma, A., Gu, S., Levine, S., Kumar, V., & Hausman, K. (2020). Dynamics-aware unsupervised discovery of skills. *ICLR*.
 - Sutton, R. S., Precup, D., & Singh, S. (1999). Between MDPs and semi-MDPs: A framework for temporal abstraction in reinforcement learning. *Artificial Intelligence*.
 - Ta, D. N., Cousineau, E., Zhao, H., & Feng, S. (2022). Conditional energy-based models for implicit policies: The gap between theory and practice. *arXiv:2207.05824*.
+- Taylor, G. W., & Hinton, G. E. (2009). Factored conditional restricted Boltzmann machines for modeling motion style. *ICML*.
+- Touati, A., & Ollivier, Y. (2021). Learning one representation to optimize all rewards. *NeurIPS*.
+- Urain, J., Li, A., Liu, P., D'Eramo, C., & Peters, J. (2021). Composable energy policies for reactive motion generation and reinforcement learning. *RSS*.
 - van den Oord, A., Li, Y., & Vinyals, O. (2018). Representation learning with contrastive predictive coding. *arXiv:1807.03748*.
 - Wainwright, M. J., & Jordan, M. I. (2008). Graphical models, exponential families, and variational inference. *Foundations and Trends in Machine Learning*.
+- Wang, L., Zhao, J., Du, Y., Adelson, E. H., & Tedrake, R. (2024). PoCo: Policy composition from and for heterogeneous robot learning. *RSS*.
+- Wu, F., Gao, C., Yang, C., Zhao, Y., Dai, B., & Wu, A. (2026). Learning expressive and compositional motion representation via spectral skills. *arXiv:2609.37677*.
+- Wu, H., Esmaeili, B., Wick, M., Tristan, J.-B., & van de Meent, J.-W. (2021). Conjugate energy-based models. *ICML*.
+- Xie, K., Bharadhwaj, H., Hafner, D., Garg, A., & Shkurti, F. (2021). Latent skill planning for exploration and transfer. *ICLR*.
+- Zhu, H., De La Crompe, B., Kalweit, G., Schneider, A., Kalweit, M., Diester, I., & Boedecker, J. (2024). Multi-intention inverse Q-learning for interpretable behavior representation. *TMLR*.
+- Ziebart, B. D., Maas, A., Bagnell, J. A., & Dey, A. K. (2008). Maximum entropy inverse reinforcement learning. *AAAI*.
+- Zimmermann, R. S., Sharma, Y., Schneider, S., Bethge, M., & Brendel, W. (2021). Contrastive learning inverts the data generating process. *ICML*.
+- Zintgraf, L., Shiarlis, K., Kurin, V., Hofmann, K., & Whiteson, S. (2019). Fast context adaptation via meta-learning. *ICML*.
 
 ---
 
@@ -724,7 +874,8 @@ $`\lvert \langle z, \phi \rangle \rvert \le \lVert z \rVert \lVert \phi \rVert =
 so $`E`$ lies in $`[-\beta\lVert z\rVert, \beta\lVert z\rVert]`$. The log-density differences in
 (6) are energy differences. ∎
 
-**Proposition 4.** *Value:* $`\nabla_z \hat F_C(\bar z; \theta) = 0`$ at the optimum, so
+**Proposition 4** (known [Pineda et al., 2022]; included for completeness). *Value:*
+$`\nabla_z \hat F_C(\bar z; \theta) = 0`$ at the optimum, so
 $`\check z = \bar z = \hat z`$. *Gradient:* in (10), $`\bar z`$ and $`\bar H`$ are constants,
 so $`\partial \check z/\partial\theta = -\bar H^{-1}\, \partial_\theta \nabla_z \hat F_C(\bar z; \theta)`$.
 Differentiating the identity $`\nabla_z \hat F_C(\hat z(\theta); \theta) = 0`$ in $`\theta`$
