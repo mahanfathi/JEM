@@ -1,4 +1,4 @@
-"""Command line: `jem train | eval | table | downstream | dash | presets`."""
+"""Command line: `jem train | eval | table | downstream | record | dash | presets`."""
 
 from __future__ import annotations
 
@@ -112,6 +112,23 @@ def _downstream(args) -> None:
     )
 
 
+def _record(args) -> None:
+    from jem.options import OptionLibrary
+    from jem.record import record_options, record_planning
+
+    lib = OptionLibrary.load(args.run)
+    if lib.world.name != "panda":
+        raise SystemExit("recordings are rendered for arm runs (world 'panda')")
+    out = Path(args.out)
+    paths = record_options(lib, out, steps=args.steps, seed=args.seed, fmt=args.format)
+    if args.episodes > 0:
+        paths.append(
+            record_planning(lib, out, args.episodes, args.planner, seed=args.seed, fmt=args.format)
+        )
+    for path in paths:
+        print(path)
+
+
 def _dash(args) -> None:
     from jem.dashboard import serve
 
@@ -200,6 +217,20 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8765)
     p.set_defaults(fn=_dash)
+
+    p = sub.add_parser("record", help="animations of an arm run (needs the sim extra)")
+    p.add_argument("run", help="run directory")
+    p.add_argument("--out", default="media", help="directory for the animations")
+    p.add_argument("--format", choices=("webp", "gif"), default="webp")
+    p.add_argument("--steps", type=int, default=80, help="control steps per option recording")
+    p.add_argument("--episodes", type=int, default=3, help="planning episodes per task (0: none)")
+    p.add_argument(
+        "--planner",
+        choices=("option-cem", "library", "oracle", "action-cem", "greedy"),
+        default="option-cem",
+    )
+    p.add_argument("--seed", type=int, default=0)
+    p.set_defaults(fn=_record)
 
     p = sub.add_parser("table", help="markdown table of final eval metrics per run")
     p.add_argument("--root", default="runs")

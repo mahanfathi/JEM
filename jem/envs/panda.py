@@ -282,7 +282,12 @@ BIN_FLOOR = 0.3  # the bin stands on a pedestal, so its target lies in the train
 
 def obstacle_scene(kind: str) -> mujoco.MjModel:
     """The arm plus one mocap obstacle body, placed per episode through mocap_pos."""
-    spec = mujoco.MjSpec.from_file(str(ASSET))
+    return obstacle_spec(kind).compile()
+
+
+def obstacle_spec(kind: str, spec: mujoco.MjSpec | None = None) -> mujoco.MjSpec:
+    """Add the task's obstacle, a mocap body, to `spec` (default: the arm alone)."""
+    spec = mujoco.MjSpec.from_file(str(ASSET)) if spec is None else spec
     body = spec.worldbody.add_body(name="obstacle", mocap=True)
     style = dict(contype=0, conaffinity=1, rgba=[0.55, 0.55, 0.52, 1])
     box = mujoco.mjtGeom.mjGEOM_BOX
@@ -300,7 +305,7 @@ def obstacle_scene(kind: str) -> mujoco.MjModel:
         body.add_geom(type=cyl, size=[0.05, 0.6, 0], pos=[0, 0, 0.6], **style)
     else:
         raise KeyError(f"unknown panda task {kind!r}")
-    return spec.compile()
+    return spec
 
 
 @dc.dataclass
