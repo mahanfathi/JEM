@@ -4,7 +4,11 @@ from jem.envs.particle import ParticleWorld
 __all__ = ["ParticleWorld", "make_world"]
 
 
-def make_world(cfg: EnvConfig, device="cpu") -> ParticleWorld:
-    if cfg.name != "particle":
-        raise KeyError(f"unknown env {cfg.name!r}")
-    return ParticleWorld(cfg, device)
+def make_world(cfg: EnvConfig, device="cpu"):
+    if cfg.name == "particle":
+        return ParticleWorld(cfg, device)
+    if cfg.name == "panda":  # needs the `sim` extra (MuJoCo Warp)
+        from jem.envs.panda import PandaWorld
+
+        return PandaWorld(cfg, device)
+    raise KeyError(f"unknown env {cfg.name!r}")

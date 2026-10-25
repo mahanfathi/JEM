@@ -13,10 +13,11 @@ from jem.config import Config
 from jem.data import collect, sample_windows
 from jem.energy import build_model
 from jem.envs import make_world
-from jem.evaluate import evaluate
+from jem.evaluate import evaluate, kmeans
 from jem.figures import make_figures
-from jem.inference import Proposals
-from jem.objectives import jem_loss, legacy_loss
+from jem.inference import Proposals, infer_newton
+from jem.objectives import candidates, jem_loss, legacy_loss
+from jem.prior import BehaviourPrior
 from jem.runlog import RunLog
 
 
@@ -37,6 +38,58 @@ def build_data(cfg: Config, device):
     train = collect(world, cfg.data.num_traj, cfg.data.traj_len, gen, cfg.env.switch_prob)
     val = collect(world, cfg.data.val_traj, cfg.data.traj_len, gen, cfg.env.switch_prob)
     return world, train, val
+
+
+def build_prior(cfg: Config, world, device) -> BehaviourPrior | None:
+    oc = cfg.objective
+    if oc.proposal == "uniform":
+        return None
+    if oc.proposal != "prior":
+        raise KeyError(f"unknown proposal {oc.proposal!r}")
+    return BehaviourPrior(
+        world.obs_dim,
+        world.act_dim,
+        world.act_low,
+        world.act_high,
+        oc.prior_components,
+        oc.prior_hidden,
+    ).to(device)
+
+
+def fit_prior(prior: BehaviourPrior, demos, cfg: Config, device) -> float:
+    """Maximum likelihood on single (s, a) pairs of the unlabelled demonstrations, then
+    freeze: a fixed proposal (and base measure) for the whole run. Returns the final NLL."""
+    gen = torch.Generator(device=device).manual_seed(cfg.train.seed + 1)
+    obs = demos.obs.reshape(-1, demos.obs.shape[-1])
+    act = demos.act.reshape(-1, demos.act.shape[-1])
+    opt = torch.optim.Adam(prior.parameters(), lr=cfg.train.lr)
+    steps = cfg.objective.prior_steps
+    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, max(1, steps))
+    nll = torch.zeros((), device=device)
+    for _ in range(steps):
+        idx = torch.randint(len(obs), (4096,), generator=gen, device=device)
+        nll = -prior.log_prob(obs[idx], act[idx]).mean()
+        opt.zero_grad(set_to_none=True)
+        nll.backward()
+        opt.step()
+        sched.step()
+    prior.requires_grad_(False)
+    return prior.eval().log_prob(obs[:65536], act[:65536]).mean().neg().item()
+
+
+@torch.no_grad()
+def init_prototypes(model, demos, cfg: Config, proposals, prior, gen) -> None:
+    """Prototype options start as k-means centroids of options inferred from contexts."""
+    nc, length = cfg.data.context_len, cfg.data.context_len + cfg.data.target_len
+    zs = []
+    for _ in range(16):
+        win = sample_windows(demos, cfg.train.batch_size, length, gen)
+        phi, offs = candidates(model, win, proposals.sample(gen), cfg, prior, gen)
+        offs = None if offs is None else offs[:, :nc]
+        U = model.scale * phi[:, :nc].float()
+        zs.append(infer_newton(U, cfg.infer.prior_std**-2, cfg.infer.iters, False, None, offs)[0])
+    centroids, _ = kmeans(torch.cat(zs), model.prototypes.shape[0], gen)
+    model.prototypes.copy_(centroids)
 
 
 def _schedule(cfg: Config):
@@ -68,7 +121,10 @@ def train(cfg: Config, root: str | Path = "runs", quiet: bool = False) -> Path:
 
     world, train_demos, val_demos = build_data(cfg, device)
     model = build_model(cfg.model, world.obs_dim, world.act_dim).to(device)
-    opt = torch.optim.AdamW(model.parameters(), lr=tc.lr, weight_decay=tc.weight_decay)
+    prior = build_prior(cfg, world, device)
+    prior_nll = None if prior is None else fit_prior(prior, train_demos, cfg, device)
+    params = list(model.parameters())
+    opt = torch.optim.AdamW(params, lr=tc.lr, weight_decay=tc.weight_decay)
     sched = torch.optim.lr_scheduler.LambdaLR(opt, _schedule(cfg))
     proposals = Proposals(
         world.act_dim, world.act_low, world.act_high, cfg.objective.num_proposals, device, tc.seed
@@ -84,21 +140,32 @@ def train(cfg: Config, root: str | Path = "runs", quiet: bool = False) -> Path:
     )
     say = (lambda *a: None) if quiet else print
     say(f"[jem] run {run.path}  ({sum(p.numel() for p in model.parameters()):,} params, {device})")
+    if prior_nll is not None:
+        run.log(0, {"train/prior_nll": prior_nll})
 
     step, state, message = 0, "finished", ""
+    proto_pending = getattr(model, "prototypes", None) is not None
     tick, tick_step = time.time(), 0
     try:
         for step in range(1, tc.steps + 1):
-            win = sample_windows(train_demos, tc.batch_size, length, gen)
+            win = sample_windows(
+                train_demos, tc.batch_size, length, gen, cfg.data.context_len, cfg.data.target_gap
+            )
             if cfg.objective.name == "jem":
-                loss, stats = jem_loss(model, win, proposals.sample(gen), cfg)
+                if proto_pending and step > cfg.objective.prototype_start:
+                    init_prototypes(model, train_demos, cfg, proposals, prior, gen)
+                    proto_pending = False
+                active = getattr(model, "prototypes", None) is not None and not proto_pending
+                loss, stats = jem_loss(
+                    model, win, proposals.sample(gen), cfg, prior, gen, prototypes=active
+                )
             elif cfg.objective.name == "legacy":
                 loss, stats = legacy_loss(model, win, cfg, gen)
             else:
                 raise KeyError(f"unknown objective {cfg.objective.name!r}")
             opt.zero_grad(set_to_none=True)
             loss.backward()
-            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), tc.grad_clip)
+            grad_norm = torch.nn.utils.clip_grad_norm_(params, tc.grad_clip)
             opt.step()
             sched.step()
 
@@ -124,6 +191,7 @@ def train(cfg: Config, root: str | Path = "runs", quiet: bool = False) -> Path:
                 run.save_checkpoint(
                     {
                         "model": model.state_dict(),
+                        "prior": None if prior is None else prior.state_dict(),
                         "config": cfg.to_dict(),
                         "step": step,
                         # Discovered options; names are attached post hoc by evaluation.

@@ -63,15 +63,29 @@ def _downstream(args) -> None:
 
     import matplotlib.pyplot as plt
 
-    from jem.downstream import DownstreamConfig, evaluate_downstream
-    from jem.figures import downstream_figure
+    from jem.downstream import (
+        ARM_DEFAULTS,
+        ARM_TASKS,
+        TASKS,
+        DownstreamConfig,
+        evaluate_downstream,
+    )
+    from jem.figures import arm_downstream_figure, downstream_figure
     from jem.options import OptionLibrary
     from jem.runlog import RunLog
 
     run = Path(args.run)
     lib = OptionLibrary.load(run)
+    arm = lib.world.name == "panda"
+    task = args.task or ("bin" if arm else "circle")
+    if task not in TASKS[lib.world.name]:
+        raise SystemExit(f"--task {task} is not a {lib.world.name} task: {TASKS[lib.world.name]}")
     cfg = DownstreamConfig(
-        episodes=args.episodes, seed=args.seed, task=args.task, horizon=args.horizon
+        episodes=args.episodes,
+        seed=args.seed,
+        task=task,
+        horizon=args.horizon,
+        **({**ARM_DEFAULTS, **ARM_TASKS[task]} if arm else {}),
     )
     results = evaluate_downstream(lib, cfg)
     print("| planner | success | steps to target |\n|---|---|---|")
@@ -85,7 +99,8 @@ def _downstream(args) -> None:
         metrics[f"down/{tag}/{name}_success"] = res["success"]
         metrics[f"down/{tag}/{name}_steps"] = res["steps_to_target"]
     log.log(step, metrics)
-    log.figure(step, f"downstream_{tag}", fig := downstream_figure(results))
+    fig = arm_downstream_figure(results, cfg.task) if arm else downstream_figure(results)
+    log.figure(step, f"downstream_{tag}", fig)
     plt.close(fig)
     log.close()
     summary = {
@@ -171,7 +186,12 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("run", help="run directory")
     p.add_argument("--episodes", type=int, default=64)
     p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--task", default="circle", choices=["circle", "cup"])
+    p.add_argument(
+        "--task",
+        default=None,
+        choices=["circle", "cup", "bin", "pillar"],
+        help="particle: circle | cup (default circle); panda: bin | pillar (default bin)",
+    )
     p.add_argument("--horizon", type=int, default=20, help="planning horizon (steps)")
     p.set_defaults(fn=_downstream)
 

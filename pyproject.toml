@@ -11,6 +11,14 @@ dependencies = [
     "matplotlib>=3.9",
 ]
 
+[project.optional-dependencies]
+# GPU physics for the robot environments: MuJoCo Warp (DeepMind and NVIDIA) on NVIDIA Warp.
+sim = [
+    "mujoco>=3.17",
+    "mujoco-warp>=3.17",
+    "warp-lang>=1.18",
+]
+
 [project.scripts]
 jem = "jem.cli:main"
 

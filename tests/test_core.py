@@ -52,7 +52,7 @@ def test_implicit_gradient_matches_finite_differences():
     assert torch.allclose(z, newton_solve((theta * U0 + U1).detach(), 1.0, 30)[0])
 
 
-@pytest.mark.parametrize("norm", ["sphere", "tanh", "none"])
+@pytest.mark.parametrize("norm", ["sphere", "ball", "tanh", "none"])
 def test_composition_is_vector_addition(norm):
     torch.manual_seed(0)
     model = OptionLinearEnergy(
@@ -65,8 +65,10 @@ def test_composition_is_vector_addition(norm):
     assert torch.allclose(lhs, rhs, atol=1e-5)
 
 
-def test_bounded_energy_scale():
-    model = OptionLinearEnergy(4, 2, ModelConfig(option_dim=6, hidden=32, depth=2))
+@pytest.mark.parametrize("norm", ["sphere", "ball"])
+def test_bounded_energy_scale(norm):
+    cfg = ModelConfig(option_dim=6, hidden=32, depth=2, feature_norm=norm)
+    model = OptionLinearEnergy(4, 2, cfg)
     obs, acts, z = torch.randn(9, 4), torch.rand(9, 50, 2) * 2 - 1, 3 * torch.randn(9, 6)
     bound = model.scale * z.norm(dim=-1, keepdim=True)
     assert (model.logits(obs, z, acts).abs() <= bound + 1e-4).all()

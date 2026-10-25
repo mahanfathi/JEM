@@ -295,7 +295,8 @@ def downstream_figure(results: dict, episodes: int = 6) -> plt.Figure:
     fig, axes = plt.subplots(episodes, len(names), figsize=(1.9 * len(names), 1.9 * episodes))
     for c, name in enumerate(names):
         res = results[name]
-        traj, centers, radii = (res[k].cpu() for k in ("traj", "centers", "radii"))
+        traj = res["traj"].cpu()
+        centers, radii = res["task"].centers.cpu(), res["task"].radii.cpu()
         for r in range(episodes):
             ax = axes[r, c]
             for o in range(centers.shape[1]):
@@ -317,23 +318,157 @@ def downstream_figure(results: dict, episodes: int = 6) -> plt.Figure:
     return fig
 
 
-def make_figures(model, world: ParticleWorld, result: dict) -> dict[str, plt.Figure]:
+# ----------------------------------------------------------------------------- the arm
+
+
+def _relative(traj: torch.Tensor) -> torch.Tensor:
+    """End-effector position relative to the target, from arm observations (..., 16)."""
+    return (traj[..., 7:10] - traj[..., 10:13]).cpu()
+
+
+def arm_rollouts_figure(rollouts: dict, names) -> plt.Figure:
+    """Each option from the same starts: top view (around the target) and side view."""
+    fig, axes = plt.subplots(2, len(names), figsize=(1.9 * len(names), 3.9), squeeze=False)
+    for c, name in enumerate(names):
+        rel = _relative(rollouts[name])
+        radius = rel[..., :2].norm(dim=-1)
+        top, side = axes[0, c], axes[1, c]
+        for r in range(rel.shape[0]):
+            top.plot(rel[r, :, 0], rel[r, :, 1], color=SERIES[c], lw=1.0, alpha=0.7)
+            side.plot(radius[r], rel[r, :, 2], color=SERIES[c], lw=1.0, alpha=0.7)
+            top.scatter(rel[r, 0, 0], rel[r, 0, 1], s=6, color=SERIES[c], lw=0)
+            side.scatter(radius[r, 0], rel[r, 0, 2], s=6, color=SERIES[c], lw=0)
+        top.scatter([0], [0], marker="*", s=70, color=INK, zorder=3)
+        side.scatter([0], [0], marker="*", s=70, color=INK, zorder=3)
+        top.set_xlim(-0.6, 0.6)
+        top.set_ylim(-0.6, 0.6)
+        side.set_xlim(0, 0.7)
+        side.set_ylim(-0.5, 0.5)
+        for ax in (top, side):
+            ax.set_aspect("equal")
+            ax.set_xticks([])
+            ax.set_yticks([])
+        top.set_title(name)
+    axes[0, 0].set_ylabel("top view")
+    axes[1, 0].set_ylabel("side view\n(height vs radius)")
+    fig.suptitle("Closed-loop end-effector paths of each option around the target ★", fontsize=9)
+    fig.tight_layout()
+    return fig
+
+
+# Each composition with the 3-D view (elevation, azimuth) that shows its shape best.
+ARM_COMPOSITIONS = {
+    "toward+cw": (62, -60),  # an inward spiral, seen from above
+    "cw+up": (16, -58),  # a helix around the target's axis
+    "toward+up": (16, -58),  # a diagonal onto the axis
+    "toward+away": (35, -60),  # cancellations: staying put
+    "up+down": (35, -60),
+}
+
+
+def arm_compositions_figure(rollouts: dict) -> plt.Figure:
+    """Sums of options in 3-D: an inward spiral, a helix, a diagonal, and cancellations.
+
+    Paths are relative to the target (★); the grey line is the target's vertical axis.
+    """
+    keys = [k for k in ARM_COMPOSITIONS if k in rollouts]
+    fig = plt.figure(figsize=(3.3 * len(keys), 3.6))
+    for c, key in enumerate(keys):
+        ax = fig.add_subplot(1, len(keys), c + 1, projection="3d")
+        ax.view_init(*ARM_COMPOSITIONS[key])
+        ax.plot([0, 0], [0, 0], [-0.45, 0.45], color=GRID, lw=1.2)
+        rel = _relative(rollouts[key])
+        for r in range(rel.shape[0]):
+            ax.plot(rel[r, :, 0], rel[r, :, 1], rel[r, :, 2], color=SERIES[c], lw=1.0, alpha=0.85)
+            ax.scatter(*rel[r, 0].tolist(), s=6, color=SERIES[c])
+        ax.scatter([0], [0], [0], marker="*", s=70, color=INK)
+        ax.set_xlim(-0.45, 0.45)
+        ax.set_ylim(-0.45, 0.45)
+        ax.set_zlim(-0.45, 0.45)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_zticks([])
+        ax.set_title(key.replace("+", " + "), fontsize=9)
+    fig.suptitle("Zero-shot composition on the arm: z_i + z_j (paths relative to the target ★)")
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
+    return fig
+
+
+BIN_FLOOR = 0.3  # jem.envs.panda.BIN_FLOOR (not imported: it needs the simulator)
+
+
+def arm_downstream_figure(results: dict, kind: str, episodes: int = 4) -> plt.Figure:
+    """Planner paths (columns) on the same episodes (rows) with the obstacle in grey.
+
+    bin: side view along the start-target line (go up and over the rim);
+    pillar: top view (go around).
+    """
+    names = list(results)
+    fig, axes = plt.subplots(
+        episodes, len(names), figsize=(1.9 * len(names), 1.9 * episodes), squeeze=False
+    )
+    task = results[names[0]]["task"]
+    for c, name in enumerate(names):
+        res = results[name]
+        traj = res["traj"].cpu()
+        for r in range(episodes):
+            ax = axes[r, c]
+            x, g = traj[r, :, 7:10], traj[r, 0, 10:13]
+            mocap = task.mocap[r, 0].cpu()
+            if kind == "bin":  # the square bin cut along the start-target line
+                u = (traj[r, 0, 7:9] - g[:2]) / (traj[r, 0, 7:9] - g[:2]).norm()
+                along = (x[:, :2] - g[:2]) @ u
+                stretch = 1 / u.abs().max().item()
+                inner, outer = 0.09 * stretch, 0.12 * stretch
+                ax.add_patch(plt.Rectangle((-outer, 0), 2 * outer, BIN_FLOOR, color=GRID))
+                for side in (-1, 1):
+                    edge = min(side * inner, side * outer)
+                    wall = plt.Rectangle((edge, BIN_FLOOR), outer - inner, 0.2, color=GRID)
+                    ax.add_patch(wall)
+                ax.plot(along, x[:, 2], color=SERIES[c], lw=1.2)
+                ax.scatter(along[0], x[0, 2], s=10, color=INK2, zorder=3)
+                ax.scatter([0], [g[2]], marker="*", s=70, color=INK, zorder=3)
+                ax.set_xlim(-0.25, 0.4)
+                ax.set_ylim(0.15, 0.8)
+            else:
+                ax.add_patch(plt.Circle(mocap[:2].tolist(), 0.05, color=GRID))
+                ax.plot(x[:, 0], x[:, 1], color=SERIES[c], lw=1.2)
+                ax.scatter(x[0, 0], x[0, 1], s=10, color=INK2, zorder=3)
+                ax.scatter([g[0]], [g[1]], marker="*", s=70, color=INK, zorder=3)
+                ax.set_xlim(g[0] - 0.45, g[0] + 0.45)
+                ax.set_ylim(g[1] - 0.45, g[1] + 0.45)
+            ax.set_aspect("equal")
+            ax.set_xticks([])
+            ax.set_yticks([])
+            if r == 0:
+                ax.set_title(f"{name}\nsuccess {100 * res['success']:.0f}%", fontsize=8)
+    view = "side view" if kind == "bin" else "top view"
+    fig.suptitle(f"Downstream on the arm ({kind}, {view}): MPC over options vs actions", fontsize=9)
+    fig.tight_layout()
+    return fig
+
+
+def make_figures(model, world, result: dict) -> dict[str, plt.Figure]:
     art = result["artifacts"]
     names = list(world.expert_names)
     with torch.no_grad():
         figs = {
             "options": options_figure(art["z"], art["labels"], art["library"], names),
-            "policies": policies_figure(model, world, art["library"], names),
-            "compositions": compositions_figure(
-                model, world, art["library"], names, art["adjacent"] + art["antipodal"]
-            ),
-            "rollouts": rollouts_figure(art["rollouts"], names),
             "recognition": recognition_figure(art["recog"], art["recog_bayes"], len(names)),
         }
-        if art["adjacent"]:
-            figs["algebra"] = algebra_figure(
-                model, world, art["library"], names, art["adjacent"][0]
+        if world.name == "panda":
+            figs["rollouts"] = arm_rollouts_figure(art["rollouts"], names)
+            figs["compositions"] = arm_compositions_figure(art["rollouts"])
+        if world.name == "particle":
+            figs["policies"] = policies_figure(model, world, art["library"], names)
+            figs["compositions"] = compositions_figure(
+                model, world, art["library"], names, art["adjacent"] + art["antipodal"]
             )
+            figs["rollouts"] = rollouts_figure(art["rollouts"], names)
+            if art["adjacent"]:
+                figs["algebra"] = algebra_figure(
+                    model, world, art["library"], names, art["adjacent"][0]
+                )
         if art["track"]:
             figs["tracking"] = tracking_figure(art["track"], names)
     return figs

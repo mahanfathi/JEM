@@ -13,6 +13,12 @@ with pi_t = softmax_k <z, U_tk>. Damped Newton with a parallel line search conve
 in a handful of iterations, from z = 0 (the "no preference" option), deterministically.
 Only dot products with cached features are needed: the network runs once per batch.
 
+When candidates come from a non-uniform proposal r (a learned behaviour prior), every
+logit carries the importance offset c_tk = -log r(a_tk): logits <z, U_tk> + c_tk. The
+offsets do not depend on z, so F stays a log-sum-exp of affine functions plus a quadratic
+(strongly convex), and the gradient, Hessian and implicit gradient keep their form with
+pi_t = softmax_k(<z, U_tk> + c_tk).
+
 Gradients through z* use the implicit function theorem. Because grad F(z*) = 0, one
 extra Newton step taken *with* autograd, z* - H^{-1} grad F(z*, theta) (H detached),
 leaves the value unchanged and has Jacobian exactly -H^{-1} d(grad F)/d theta.
@@ -35,12 +41,19 @@ LINE_SEARCH = (1.0, 0.5, 0.25, 0.125, 0.0625, 0.0)
 
 
 class Proposals:
-    """Uniform action proposals on a box via randomly shifted Sobol points (randomised QMC)."""
+    """Uniform action proposals on a box via randomly shifted Sobol points (randomised QMC).
 
-    def __init__(self, act_dim: int, low: float, high: float, num: int, device, seed: int = 0):
+    The box bounds are scalars (a cube) or per-dimension tensors from the environment.
+    """
+
+    def __init__(self, act_dim: int, low, high, num: int, device, seed: int = 0):
         self.base = SobolEngine(act_dim, scramble=True, seed=seed).draw(num).to(device)
+        if isinstance(low, Tensor):
+            low, high = low.to(device), high.to(device)
+            self.log_volume = sum(math.log(w) for w in (high - low).tolist())
+        else:
+            self.log_volume = act_dim * math.log(high - low)
         self.low, self.high = low, high
-        self.log_volume = act_dim * math.log(high - low)
 
     def sample(self, gen: torch.Generator | None = None) -> Tensor:
         shift = torch.rand(self.base.shape[-1], generator=gen, device=self.base.device)
@@ -50,19 +63,25 @@ class Proposals:
 # ----------------------------------------------------------------------------- Newton
 
 
-def option_objective(z: Tensor, U: Tensor, prec: float, w: Tensor | None = None) -> Tensor:
+def option_objective(
+    z: Tensor, U: Tensor, prec: float, w: Tensor | None = None, offs: Tensor | None = None
+) -> Tensor:
     """F at C candidate points per problem: z (B, C, d), U (B, N, K, d) -> (B, C).
 
-    Optional step weights w (B, N) turn the sum over steps into a weighted sum.
+    Optional step weights w (B, N) turn the sum over steps into a weighted sum; optional
+    offsets offs (B, N, K) are added to the logits (importance weights of the candidates).
     """
     logits = torch.einsum("bcd,bnkd->bcnk", z, U)
+    if offs is not None:
+        logits = logits + offs[:, None]
     nll = logits.logsumexp(-1) - logits[..., 0]
     nll = (nll if w is None else nll * w[:, None]).sum(-1)
     return nll + 0.5 * prec * z.pow(2).sum(-1)
 
 
-def _grad(z: Tensor, U: Tensor, prec: float, w: Tensor | None = None):
-    pi = torch.einsum("bd,bnkd->bnk", z, U).softmax(-1)
+def _grad(z: Tensor, U: Tensor, prec: float, w: Tensor | None = None, offs=None):
+    logits = torch.einsum("bd,bnkd->bnk", z, U)
+    pi = (logits if offs is None else logits + offs).softmax(-1)
     mean = torch.einsum("bnk,bnkd->bnd", pi, U)
     resid = mean - U[:, :, 0]
     if w is not None:
@@ -81,7 +100,7 @@ def _hessian(pi: Tensor, mean: Tensor, U: Tensor, prec: float, w: Tensor | None 
 
 @torch.no_grad()
 def newton_solve(
-    U: Tensor, prec: float, iters: int, w: Tensor | None = None
+    U: Tensor, prec: float, iters: int, w: Tensor | None = None, offs: Tensor | None = None
 ) -> tuple[Tensor, Tensor]:
     """Minimise F; returns z* (B, d) and the final gradient norm (B,)."""
     b, _, _, d = U.shape
@@ -89,28 +108,34 @@ def newton_solve(
     steps = torch.tensor(LINE_SEARCH, device=U.device, dtype=U.dtype)
     rows = torch.arange(b, device=U.device)
     for _ in range(iters):
-        g, pi, mean = _grad(z, U, prec, w)
+        g, pi, mean = _grad(z, U, prec, w, offs)
         delta = torch.linalg.solve(_hessian(pi, mean, U, prec, w), g)
         cand = z[:, None] - steps[None, :, None] * delta[:, None]
-        f = option_objective(cand, U, prec, w)
+        f = option_objective(cand, U, prec, w, offs)
         # Largest step whose objective is within rounding noise of the best one. Near the
         # optimum every candidate ties and a strict argmin would freeze on the zero step.
         tol = 1e-6 * f[:, -1:].abs() + 1e-12
         z = cand[rows, (f <= f.min(-1, keepdim=True).values + tol).float().argmax(-1)]
-    return z, _grad(z, U, prec, w)[0].norm(dim=-1)
+    return z, _grad(z, U, prec, w, offs)[0].norm(dim=-1)
 
 
 def infer_newton(
-    U: Tensor, prec: float, iters: int, implicit_grad: bool = True, w: Tensor | None = None
+    U: Tensor,
+    prec: float,
+    iters: int,
+    implicit_grad: bool = True,
+    w: Tensor | None = None,
+    offs: Tensor | None = None,
 ) -> tuple[Tensor, Tensor]:
     """MAP option with (optionally) the exact implicit gradient. Returns (z, residual).
 
-    w (B, N) optionally weights the context steps (e.g. recency under option switching).
+    w (B, N) optionally weights the context steps (e.g. recency under option switching);
+    offs (B, N, K) are z-independent logit offsets (importance weights of the candidates).
     """
-    z_star, residual = newton_solve(U.detach(), prec, iters, w)
+    z_star, residual = newton_solve(U.detach(), prec, iters, w, offs)
     if not (implicit_grad and U.requires_grad):
         return z_star, residual
-    g, pi, mean = _grad(z_star, U, prec, w)
+    g, pi, mean = _grad(z_star, U, prec, w, offs)
     with torch.no_grad():
         h = _hessian(pi, mean, U, prec, w)
     return z_star - torch.linalg.solve(h, g), residual

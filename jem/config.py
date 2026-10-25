@@ -8,7 +8,24 @@ from __future__ import annotations
 import dataclasses as dc
 import json
 import typing
+import warnings
 from typing import Any
+
+
+@dc.dataclass
+class PandaConfig:
+    """The arm's experts (jem/envs/panda.py). Speeds in m/s, angles in rad."""
+
+    ee_speed: float = 0.25  # experts' end-effector speed
+    act_std: float = 0.35  # expert noise per joint, in action units (the box is [-1, 1]^7)
+    qd_scale: float = 0.2  # |a_j| = 1 commands qd_scale * joint j's velocity limit
+    damping: float = 0.05  # damped least squares lambda (m)
+    posture_gain: float = 1.0  # null-space pull toward the home posture (1/s)
+    axis_radius: float = 0.05  # radial and orbit speeds fade within this distance of the axis
+    init_noise: float = 0.3  # uniform joint noise around the home posture at reset
+    # Targets ~ U[target_lo, target_hi]: reachable within home +- 0.3 rad on every joint.
+    target_lo: tuple[float, ...] = (0.45, -0.2, 0.35)
+    target_hi: tuple[float, ...] = (0.6, 0.2, 0.7)
 
 
 @dc.dataclass
@@ -23,6 +40,7 @@ class EnvConfig:
     target_range: float = 0.5  # target ~ U[-target_range, target_range]^2
     min_dist: float = 0.15  # initial agent-target separation
     switch_prob: float = 0.0  # per-step chance that the demonstrator switches expert
+    panda: PandaConfig = dc.field(default_factory=PandaConfig)
 
 
 @dc.dataclass
@@ -32,6 +50,7 @@ class DataConfig:
     traj_len: int = 64
     context_len: int = 8  # steps the option is inferred from
     target_len: int = 8  # steps the option must then explain
+    target_gap: int = 0  # targets start a uniform 0..target_gap steps after the context
     seed: int = 1234  # dataset seed, fixed across model seeds
 
 
@@ -43,7 +62,8 @@ class ModelConfig:
     option_dim: int = 8
     hidden: int = 256
     depth: int = 3
-    feature_norm: str = "sphere"  # linear only: sphere | tanh | none
+    feature_norm: str = "sphere"  # linear only: sphere | ball | tanh | none
+    prototypes: int = 0  # linear only: learned prototype options trained as a mixture (0: off)
     init_scale: float = 5.0  # linear only: initial temperature tau
     learn_scale: bool = True
     squared: bool = False  # mlp only: E = f^2, as in 2022
@@ -63,7 +83,15 @@ class InferConfig:
 @dc.dataclass
 class ObjectiveConfig:
     name: str = "jem"  # jem | legacy
-    num_proposals: int = 256  # uniform (randomised Sobol) action proposals per step
+    num_proposals: int = 256  # action proposals per step
+    proposal: str = "uniform"  # uniform (randomised Sobol) | prior (learned behaviour prior)
+    uniform_frac: float = 0.25  # prior: share of the proposals that stay uniform (defensive)
+    prior_components: int = 16  # prior: truncated-Gaussian mixture components
+    prior_hidden: int = 256
+    prior_steps: int = 2000  # prior: maximum-likelihood steps before JEM; then it is frozen
+    prototype_start: int = 2000  # prototypes: k-means of inferred options initialises them here
+    prototype_weight: float = 1.0  # prototypes: weight of the mixture held-out loss
+    continuous_weight: float = 1.0  # prototypes: weight of the per-window loss once they start
     symmetric: bool = True  # jem: also infer from targets and predict the context
     hazard: float = 0.0  # jem: assumed per-step option-switch probability (0 = options persist)
     # legacy (2022, Mordatch-style) terms
@@ -94,7 +122,8 @@ class TrainConfig:
 
 @dc.dataclass
 class EvalConfig:
-    num_proposals: int = 4096
+    num_proposals: int = 4096  # partition functions in policy KL and composition metrics
+    context_proposals: int = 1024  # option inference, recognition and tracking
     windows: int = 2048
     context_lens: tuple[int, ...] = (1, 2, 4, 8, 16)
     rollouts: int = 16
@@ -159,6 +188,31 @@ PRESETS: dict[str, dict[str, Any]] = {
         "objective.klz_chains": 8,
         "train.lr": 1e-4,
     },
+    # Franka Panda in MuJoCo Warp: six task-space experts, 7-D joint velocity commands.
+    # Candidates come from a learned behaviour prior (uniform ones are too sparse in 7-D),
+    # targets lie up to 2 s past the context, and after 2k steps the options consolidate
+    # into six prototypes trained as a mixture (per-window options absorb nuisance here).
+    "panda": {
+        "env.name": "panda",
+        "env.experts": ("toward", "away", "cw", "ccw", "up", "down"),
+        "env.min_dist": 0.1,
+        "objective.proposal": "prior",
+        "data.target_gap": 40,
+        "model.prototypes": 6,
+        "objective.continuous_weight": 0.0,
+        "train.steps": 10_000,
+        "eval.num_proposals": 16384,
+        "eval.context_proposals": 4096,
+    },
+    "panda-uniform": {  # the arm with the particle's recipe (E6a): uniform proposals only
+        "env.name": "panda",
+        "env.experts": ("toward", "away", "cw", "ccw", "up", "down"),
+        "env.min_dist": 0.1,
+        "train.steps": 10_000,
+        "eval.num_proposals": 16384,
+        "eval.context_proposals": 4096,
+    },
+    "panda-smoke": {},  # filled in below: the smoke settings on the arm
     "smoke": {
         "data.num_traj": 64,
         "data.val_traj": 32,
@@ -178,6 +232,16 @@ PRESETS: dict[str, dict[str, Any]] = {
         "eval.rollout_len": 10,
         "eval.track_traj": 4,
     },
+}
+
+
+PRESETS["panda-smoke"] = {
+    **PRESETS["panda"],
+    **PRESETS["smoke"],
+    "objective.prototype_start": 2,
+    "objective.prior_steps": 20,
+    "eval.num_proposals": 1024,
+    "eval.context_proposals": 256,
 }
 
 
@@ -230,14 +294,27 @@ def make_config(preset: str = "jem", overrides: list[str] | None = None) -> Conf
     return cfg
 
 
+def _leaves(prefix: str, values: dict[str, Any]):
+    for key, value in values.items():
+        if isinstance(value, dict):
+            yield from _leaves(f"{prefix}.{key}", value)
+        else:
+            yield f"{prefix}.{key}", tuple(value) if isinstance(value, list) else value
+
+
 def from_dict(d: dict[str, Any]) -> Config:
-    """Rebuild a Config from `Config.to_dict()` output (e.g. a run's config.json)."""
+    """Rebuild a Config from `Config.to_dict()` output (e.g. a run's config.json).
+
+    Keys of options that have since been removed are skipped with a warning, so old runs
+    stay loadable.
+    """
     cfg = Config(name=d.get("name", "jem"))
     for section, values in d.items():
         if section == "name" or not isinstance(values, dict):
             continue
-        for key, value in values.items():
-            if isinstance(value, list):
-                value = tuple(value)
-            _set(cfg, f"{section}.{key}", value)
+        for key, value in _leaves(section, values):
+            try:
+                _set(cfg, key, value)
+            except (KeyError, AttributeError):
+                warnings.warn(f"ignoring unknown config key {key!r}", stacklevel=2)
     return cfg

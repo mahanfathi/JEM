@@ -30,7 +30,9 @@ def wrap(angle: Tensor) -> Tensor:
 
 
 class ParticleWorld:
+    name = "particle"
     obs_dim = 4
+    state_dim = 4  # the observation is the whole state
     act_dim = 2
     act_low = -1.0
     act_high = 1.0
@@ -42,10 +44,35 @@ class ParticleWorld:
         self.expert_angles = torch.tensor(
             [EXPERT_ANGLES[name] for name in cfg.experts], device=self.device
         )
+        # E[cos(heading noise)]: how well the experts' own actions agree with their mean.
+        self.agreement_ceiling = math.exp(-0.5 * cfg.angle_std**2)
 
     @property
     def num_experts(self) -> int:
         return len(self.expert_names)
+
+    def obs(self, state: Tensor) -> Tensor:
+        return state
+
+    def effect(self, obs: Tensor, act: Tensor) -> Tensor:
+        """What an action does in task space: here the velocity itself."""
+        return act
+
+    def expert_effect(self, obs: Tensor, expert: Tensor) -> Tensor:
+        """Direction of the expert's mean effect (a unit vector)."""
+        return self.expert_mean_dir(obs, expert)
+
+    def expert_pairs(self) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
+        """(pairs 90 degrees apart, antipodal pairs)."""
+        adjacent, antipodal = [], []
+        for i in range(self.num_experts):
+            for j in range(i + 1, self.num_experts):
+                gap = abs(wrap(self.expert_angles[i] - self.expert_angles[j]).item())
+                if abs(gap - math.pi / 2) < 1e-3:
+                    adjacent.append((i, j))
+                elif abs(gap - math.pi) < 1e-3:
+                    antipodal.append((i, j))
+        return adjacent, antipodal
 
     def reset(self, n: int, gen: torch.Generator | None = None) -> Tensor:
         cfg = self.cfg
@@ -59,8 +86,8 @@ class ParticleWorld:
             agent = torch.where(close[:, None], fresh, agent)
         return torch.cat([agent, target], dim=-1)
 
-    def step(self, obs: Tensor, act: Tensor) -> Tensor:
-        agent, target = obs[..., :2], obs[..., 2:]
+    def step(self, state: Tensor, act: Tensor) -> Tensor:
+        agent, target = state[..., :2], state[..., 2:]
         agent = agent + self.cfg.dt * act.clamp(self.act_low, self.act_high)
         return torch.cat([agent.clamp(-self.cfg.arena, self.cfg.arena), target], dim=-1)
 

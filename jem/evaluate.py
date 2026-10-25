@@ -5,11 +5,17 @@ library      Infer z from 16-step held-out windows, k-means into K options, matc
 recognition  Classify fresh N-step windows with the energy itself,
              argmax_k sum_t log p(a_t | s_t, z_k)  -> accuracy as evidence accumulates.
 fidelity     KL(expert || model) at held-out states from exact expert densities and an
-             importance estimate of each option's partition function; heading error of
-             the model's mean action.
+             importance estimate of each option's partition function; the angle between
+             the task-space effects of the model's and the expert's mean actions.
 rollouts     Closed-loop sampling from each option; agreement with the matched expert.
-composition  Sum of energies of two options. Experts 90 degrees apart should compose to
-             their bisector (product of experts); antipodal experts should cancel.
+composition  Sum of energies of two options against the product of the two true experts:
+             orthogonal experts should compose to their product, antipodal ones cancel.
+             Worlds with closed-form products (truncated-Gaussian experts) are also scored
+             by the exact KL(product || composed option) in nats.
+
+A world provides `effect(obs, act)` (what an action does in task space) and
+`expert_effect(obs, k)` (the expert's mean effect), so the same metrics serve the
+particle (effect = velocity) and the arm (effect = end-effector velocity).
 """
 
 from __future__ import annotations
@@ -22,8 +28,6 @@ from torch import Tensor
 
 from jem.config import Config
 from jem.data import Demos, Window, collect, sample_windows
-from jem.envs import ParticleWorld
-from jem.envs.particle import wrap
 from jem.inference import Proposals, infer_option
 
 CHUNK = 2**21  # candidate (state, action) pairs per forward pass
@@ -66,8 +70,10 @@ def log_prob(logit_at: Tensor, logit_props: Tensor, log_volume: float) -> Tensor
 
 
 def mean_action(logits: Tensor, acts: Tensor) -> Tensor:
-    """Self-normalised mean action: logits (..., K), acts (K, da) -> (..., da)."""
-    return logits.softmax(-1) @ acts
+    """Self-normalised mean: logits (..., K), acts (K, da) or (..., K, da) -> (..., da)."""
+    if acts.dim() == 2:
+        return logits.softmax(-1) @ acts
+    return torch.einsum("...k,...kd->...d", logits.softmax(-1), acts)
 
 
 def angle_deg(u: Tensor, v: Tensor) -> Tensor:
@@ -118,25 +124,26 @@ def hmm_filter(loglik: Tensor, hazard: float) -> Tensor:
     return torch.stack(beliefs, 1).exp()
 
 
-def fair_snippets(world: ParticleWorld, demos: Demos, n: int, length: int, gen) -> Window:
+def fair_snippets(world, demos: Demos, n: int, length: int, gen) -> Window:
     """Recognition test data: start states pooled over all demos, labels drawn uniformly,
     then that expert rolled out. The start state carries no information about the label,
     so the rule argmax_k sum_t log p_k(a_t | s_t) with true densities is Bayes-optimal.
     (Windows cut from demos would leak the label through where each expert tends to be.)
     """
-    flat = demos.obs.reshape(-1, demos.obs.shape[-1])
-    obs = flat[torch.randint(len(flat), (n,), generator=gen, device=flat.device)]
+    flat = demos.state.reshape(-1, demos.state.shape[-1])
+    state = flat[torch.randint(len(flat), (n,), generator=gen, device=flat.device)]
     expert = torch.randint(world.num_experts, (n,), generator=gen, device=flat.device)
     obs_t, act_t = [], []
     for _ in range(length):
+        obs = world.obs(state)
         act = world.expert_act(obs, expert, gen)
         obs_t.append(obs)
         act_t.append(act)
-        obs = world.step(obs, act)
+        state = world.step(state, act)
     return Window(torch.stack(obs_t, 1), torch.stack(act_t, 1), expert[:, None].expand(n, length))
 
 
-def true_logits(world: ParticleWorld, states: Tensor, props: Tensor) -> Tensor:
+def true_logits(world, states: Tensor, props: Tensor) -> Tensor:
     """log p_k(a | s) of every true expert over shared actions: (S, ds), (M, da) -> (S, K, M)."""
     k = world.num_experts
     experts = torch.arange(k, device=states.device).expand(len(states), k)[..., None]
@@ -198,44 +205,57 @@ def match(assign: Tensor, labels: Tensor, k: int) -> list[int]:
 
 
 @torch.no_grad()
-def rollout(
-    model, world: ParticleWorld, zs: Tensor, start: Tensor, steps: int, proposals, gen, weights=None
-):
+def rollout(model, world, zs: Tensor, start: Tensor, steps: int, proposals, gen, weights=None):
     """Sample a ~ p(a|s) ∝ exp(sum_p w_p logits(s, z_p, a)) by importance resampling.
 
-    zs (P, d) are composed by a weighted sum of energies (weights default to 1).
-    Returns obs (R, T+1, ds), act (R, T, da).
+    zs (P, d) are composed by a weighted sum of energies (weights default to 1). `start`
+    holds simulator states. Returns obs (R, T+1, ds), act (R, T, da).
     """
     w = torch.ones(len(zs), device=zs.device) if weights is None else torch.as_tensor(weights)
     w = w.to(zs.device, zs.dtype)[None, :, None]
-    obs, traj, acts = start, [start], []
+    state = start
+    obs = world.obs(state)
+    traj, acts = [obs], []
     for _ in range(steps):
         props = proposals.sample(gen)
         u = (w * option_logits(model, obs, zs, props[None])).sum(1)  # (R, M)
         a = props[torch.multinomial(u.softmax(-1), 1, generator=gen).squeeze(-1)]
-        obs = world.step(obs, a)
+        state = world.step(state, a)
+        obs = world.obs(state)
         traj.append(obs)
         acts.append(a)
     return torch.stack(traj, 1), torch.stack(acts, 1)
 
 
+@torch.no_grad()
+def expert_rollout(world, expert: int, start: Tensor, steps: int, gen) -> tuple[Tensor, Tensor]:
+    """Closed-loop trajectories of a true expert: obs (R, T+1, ds), act (R, T, da)."""
+    state = start
+    obs = world.obs(state)
+    ex = torch.full(state.shape[:1], expert, device=state.device)
+    traj, acts = [obs], []
+    for _ in range(steps):
+        a = world.expert_act(obs, ex, gen)
+        state = world.step(state, a)
+        obs = world.obs(state)
+        traj.append(obs)
+        acts.append(a)
+    return torch.stack(traj, 1), torch.stack(acts, 1)
+
+
+def agreement(world, obs: Tensor, act: Tensor, expert: int) -> Tensor:
+    """Mean cosine between the effect of each executed action and the expert's mean effect."""
+    ex = torch.full(act.shape[:-1], expert, device=act.device)
+    return torch.nn.functional.cosine_similarity(
+        world.effect(obs, act), world.expert_effect(obs, ex), dim=-1
+    ).mean()
+
+
 # ----------------------------------------------------------------------------- main entry
 
 
-def expert_pairs(world: ParticleWorld) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
-    """(adjacent pairs 90 degrees apart, antipodal pairs)."""
-    adjacent, antipodal = [], []
-    for i, j in itertools.combinations(range(world.num_experts), 2):
-        gap = abs(wrap(world.expert_angles[i] - world.expert_angles[j]).item())
-        if abs(gap - math.pi / 2) < 1e-3:
-            adjacent.append((i, j))
-        elif abs(gap - math.pi) < 1e-3:
-            antipodal.append((i, j))
-    return adjacent, antipodal
-
-
 @torch.no_grad()
-def evaluate(model, world: ParticleWorld, demos: Demos, cfg: Config, seed: int = 0) -> dict:
+def evaluate(model, world, demos: Demos, cfg: Config, seed: int = 0) -> dict:
     """Run every evaluation. Returns {"metrics": {...}, "artifacts": {...}} for the figures."""
     ec = cfg.eval
     device = world.device
@@ -243,7 +263,9 @@ def evaluate(model, world: ParticleWorld, demos: Demos, cfg: Config, seed: int =
     k = world.num_experts
     was_training = model.training
     model.eval()
-    ctx_props = Proposals(world.act_dim, world.act_low, world.act_high, 1024, device, seed=11)
+    ctx_props = Proposals(
+        world.act_dim, world.act_low, world.act_high, ec.context_proposals, device, seed=11
+    )
     big_props = Proposals(
         world.act_dim, world.act_low, world.act_high, ec.num_proposals, device, 13
     )
@@ -255,6 +277,12 @@ def evaluate(model, world: ParticleWorld, demos: Demos, cfg: Config, seed: int =
     labels = win.expert.mode(dim=1).values
     z = infer_chunked(model, win.obs, win.act, cfg, ctx_props.sample(gen), gen)
     centroids, assign = kmeans(z, k, gen)
+    proto = getattr(model, "prototypes", None)
+    if proto is not None and len(proto) == k and proto.abs().sum() > 0:
+        # Learned prototype options: windows are assigned by recognition with the energy.
+        metrics["eval/nmi_kmeans"] = nmi(assign, labels, k, k)
+        centroids = proto.detach()
+        assign = step_loglik(model, win.obs, win.act, centroids, ctx_props, gen).sum(1).argmax(-1)
     perm = match(assign, labels, k)  # cluster c <-> expert perm[c]
     inv = [perm.index(e) for e in range(k)]
     library = centroids[inv]  # library[e] = option matched to expert e
@@ -262,7 +290,7 @@ def evaluate(model, world: ParticleWorld, demos: Demos, cfg: Config, seed: int =
     metrics["eval/cluster_acc"] = (
         (torch.tensor(perm, device=device)[assign] == labels).float().mean().item()
     )
-    metrics["eval/z_norm"] = z.norm(dim=-1).mean().item()
+    metrics["eval/z_norm"] = z[:, : model.option_dim].norm(dim=-1).mean().item()
 
     # Recognition by energy -------------------------------------------------------------
     recog, bayes = {}, {}
@@ -282,40 +310,51 @@ def evaluate(model, world: ParticleWorld, demos: Demos, cfg: Config, seed: int =
     flat = demos.obs.reshape(-1, demos.obs.shape[-1])
     states = flat[torch.randint(len(flat), (1024,), generator=gen, device=device)]
     props = big_props.sample(gen)
+    u_all = option_logits_chunked(model, states, library, props[None])  # (S, K, M)
     kls, heading = [], []
     for e in range(k):
         ex = torch.full((len(states),), e, device=device)
         a = world.expert_act(states, ex, gen)
-        cand = torch.cat([a[:, None], props.expand(len(a), *props.shape)], 1)
-        u = option_logits_chunked(model, states, library[e : e + 1], cand)[:, 0]
-        kls.append(
-            (
-                world.expert_log_prob(states, ex, a)
-                - log_prob(u[:, 0], u[:, 1:], big_props.log_volume)
-            ).mean()
-        )
-        heading.append(
-            angle_deg(mean_action(u[:, 1:], props), world.expert_mean_dir(states, ex)).mean()
-        )
+        u_at = option_logits_chunked(model, states, library[e : e + 1], a[:, None])[:, 0, 0]
+        log_model = log_prob(u_at, u_all[:, e], big_props.log_volume)
+        kls.append((world.expert_log_prob(states, ex, a) - log_model).mean())
+        mean = world.effect(states, mean_action(u_all[:, e], props))
+        heading.append(angle_deg(mean, world.expert_effect(states, ex)).mean())
     metrics["eval/policy_kl"] = torch.stack(kls).mean().item()
     metrics["eval/heading_err_deg"] = torch.stack(heading).mean().item()
 
     # Composition -----------------------------------------------------------------------
-    # References are the true products of experts, pushed through the same estimator.
-    adjacent, antipodal = expert_pairs(world)
-    u_all = option_logits_chunked(model, states, library, props[None])  # (S, K, M)
-    t_all = true_logits(world, states, props)  # (S, K, M)
-    comp_err, cancel, antipodal_cos = [], [], []
-    for i, j in adjacent:
-        m = mean_action(u_all[:, i] + u_all[:, j], props)
-        ref = mean_action(t_all[:, i] + t_all[:, j], props)
-        comp_err.append(angle_deg(m, ref).mean())
-    unit = props / props.norm(dim=-1, keepdim=True).clamp_min(1e-6)
+    # References are the true products of experts: in closed form where the world has it,
+    # otherwise pushed through the same estimator as the model.
+    adjacent, antipodal = world.expert_pairs()
+    exact = hasattr(world, "product_log_prob")
+    t_all = None if exact else true_logits(world, states, props)  # (S, K, M)
+
+    def composed(i: int, j: int, wgt: float) -> Tensor:  # mean action of z_i + wgt z_j
+        return world.effect(states, mean_action(u_all[:, i] + wgt * u_all[:, j], props))
+
+    def reference(i: int, j: int, wgt: float) -> Tensor:  # mean action of p_i p_j^wgt
+        if exact:
+            return world.effect(states, world.product_mean(states, (i, j), (1.0, wgt)))
+        return world.effect(states, mean_action(t_all[:, i] + wgt * t_all[:, j], props))
+
+    def product_kl(i: int, j: int, wgt: float) -> Tensor:  # KL(p_i p_j^wgt || model)
+        a = world.product_act(states, (i, j), (1.0, wgt), gen)
+        u_at = option_logits_chunked(model, states, library[[i, j]], a[:, None])[..., 0]
+        u_props = u_all[:, i] + wgt * u_all[:, j]
+        log_model = log_prob(u_at[:, 0] + wgt * u_at[:, 1], u_props, big_props.log_volume)
+        return (world.product_log_prob(states, (i, j), (1.0, wgt), a) - log_model).mean()
+
+    comp_err = [angle_deg(composed(i, j, 1.0), reference(i, j, 1.0)).mean() for i, j in adjacent]
+    unit = world.effect(states[:, None], props)  # task-space effect of every proposal
+    unit = unit / unit.norm(dim=-1, keepdim=True).clamp_min(1e-6)
+    cancel, antipodal_cos = [], []
     for i, j in antipodal:
         cancel.append(mean_action(u_all[:, i] + u_all[:, j], unit).norm(dim=-1).mean())
-        if library.shape[1] > 1:  # cosines of 1-D options are trivially +-1
+        d = model.option_dim  # the inferred part, without a base exponent
+        if d > 1:  # cosines of 1-D options are trivially +-1
             antipodal_cos.append(
-                torch.nn.functional.cosine_similarity(library[i], library[j], dim=0)
+                torch.nn.functional.cosine_similarity(library[i, :d], library[j, :d], dim=0)
             )
     single = torch.stack([mean_action(u_all[:, e], unit).norm(dim=-1).mean() for e in range(k)])
     if comp_err:
@@ -325,16 +364,22 @@ def evaluate(model, world: ParticleWorld, demos: Demos, cfg: Config, seed: int =
         metrics["eval/single_resultant"] = single.mean().item()
     if antipodal_cos:
         metrics["eval/antipodal_cos"] = torch.stack(antipodal_cos).mean().item()
+    if exact:
+        if adjacent:
+            kl = [product_kl(i, j, 1.0) for i, j in adjacent]
+            metrics["eval/compose_kl"] = torch.stack(kl).mean().item()
+        if antipodal:
+            kl = [product_kl(i, j, 1.0) for i, j in antipodal]
+            metrics["eval/cancel_kl"] = torch.stack(kl).mean().item()
 
     # Behaviour algebra: z_i + w z_j against the weighted product of the true experts ----
     if adjacent:
         i, j = adjacent[0]
-        errs = []
-        for wgt in ec.algebra_weights:
-            m = mean_action(u_all[:, i] + wgt * u_all[:, j], props)
-            ref = mean_action(t_all[:, i] + wgt * t_all[:, j], props)
-            errs.append(angle_deg(m, ref).mean())
+        errs = [angle_deg(composed(i, j, w), reference(i, j, w)).mean() for w in ec.algebra_weights]
         metrics["eval/algebra_err_deg"] = torch.stack(errs).mean().item()
+        if exact:
+            kl = [product_kl(i, j, w) for w in ec.algebra_weights]
+            metrics["eval/algebra_kl"] = torch.stack(kl).mean().item()
 
     # Tracking: options that switch mid-trajectory, filtered online over the library -----
     track = {}
@@ -360,17 +405,20 @@ def evaluate(model, world: ParticleWorld, demos: Demos, cfg: Config, seed: int =
     rollouts = {}
     for e in range(k):
         traj, acts = rollout(model, world, library[e : e + 1], start, ec.rollout_len, sir, gen)
-        ex = torch.full(acts.shape[:2], e, device=device)
-        cos = torch.nn.functional.cosine_similarity(
-            acts, world.expert_mean_dir(traj[:, :-1], ex), dim=-1
-        )
-        agree.append(cos.mean())
+        agree.append(agreement(world, traj[:, :-1], acts, e))
         rollouts[world.expert_names[e]] = traj
     metrics["eval/rollout_agree"] = torch.stack(agree).mean().item()
-    metrics["eval/rollout_agree_expert"] = math.exp(-0.5 * world.cfg.angle_std**2)
     for i, j in adjacent + antipodal:
         traj, _ = rollout(model, world, library[[i, j]], start, ec.rollout_len, sir, gen)
         rollouts[f"{world.expert_names[i]}+{world.expert_names[j]}"] = traj
+    ceiling = getattr(world, "agreement_ceiling", None)
+    if ceiling is None:  # the experts' own closed-loop agreement, by Monte Carlo
+        own = []
+        for e in range(k):
+            traj, acts = expert_rollout(world, e, start, ec.rollout_len, gen)
+            own.append(agreement(world, traj[:, :-1], acts, e))
+        ceiling = torch.stack(own).mean().item()
+    metrics["eval/rollout_agree_expert"] = ceiling
 
     model.train(was_training)
     return {

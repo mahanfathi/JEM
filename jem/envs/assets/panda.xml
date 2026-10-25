@@ -1,0 +1,152 @@
+<!--
+  Franka Emika Panda arm (7 DoF, no hand): compact and mesh-free.
+
+  Derived from MuJoCo Menagerie, franka_emika_panda/panda_nohand.xml
+  (https://github.com/google-deepmind/mujoco_menagerie, commit f3b6013), licensed under
+  the Apache License 2.0. Menagerie derives it from Franka Emika's franka_description URDF.
+
+  Kept exactly: the kinematic tree (body pos/quat), inertials, joint classes (axis, range,
+  armature, damping), the position-servo actuators (gainprm/biasprm, ctrlrange = joint
+  range, forcerange), the "home" keyframe, integrator implicitfast and impratio.
+
+  Modified:
+  - No meshes, materials or visual geoms. Each link's collision meshes are replaced by 1-3
+    capsules fitted to them in the body frame (mesh vertices plus area-uniform surface
+    samples; k-means clusters, each fitted by its principal axis, a 99th-percentile radius
+    and the tightest endpoints, then jointly refined to the smallest union that covers the
+    mesh). The capsules cover >= 99.98% of each mesh's volume, no surface point is more than
+    3 mm outside, and their union is 1.37-2.04x the mesh volume per link (1.55x overall).
+  - A tool on the flange (body "attachment", 0.107 m along link7 z): a capsule of radius
+    0.02 m from the flange to 0.10 m beyond it. Site "ee", the centre of the tool tip, is
+    the end effector.
+  - A floor plane at z = 0.
+  - Collision filtering: robot geoms have contype=1 conaffinity=0 and world geoms (the
+    default class: floor, obstacles) contype=0 conaffinity=1, so the robot collides with
+    the world but never with itself (Menagerie's link0/link1 exclude is dropped) and world
+    geoms never collide with each other.
+  - inertiafromgeom="false": the new geoms carry no mass, so all inertia is Menagerie's.
+  - gravcomp="1" on link1-link7, as the real Panda's controller compensates gravity.
+    Without it the servos' static error re-anchors every control step (targets are set
+    relative to the measured q) and the arm sinks ~46 mm/s at rest.
+  - timestep 0.002 s (Menagerie's). When a large servo lead saturates an actuator's
+    forcerange, MuJoCo drops its implicit damping while clamped and the wrist servos
+    (kv / inertia ~ 2000/s) chatter at steps above ~1 ms. 0.004 and 0.005 s move the end
+    effector 6-11 cm (median) off the 0.002 s path within 4 s; 0.001 s removes the chatter
+    (one-period EE error p95 0.2 mm vs 4.4 mm at 0.002 s) at twice the cost.
+-->
+<mujoco model="panda">
+  <compiler angle="radian" autolimits="true" inertiafromgeom="false"/>
+
+  <option integrator="implicitfast" impratio="10" timestep="0.002"/>
+
+  <default>
+    <!-- World geoms (floor, obstacles) collide with the robot only. -->
+    <geom contype="0" conaffinity="1"/>
+    <default class="panda">
+      <joint armature="0.1" damping="1" axis="0 0 1" range="-2.8973 2.8973"/>
+      <general dyntype="none" biastype="affine" ctrlrange="-2.8973 2.8973" forcerange="-87 87"/>
+      <!-- Robot geoms collide with the world only, never with each other. -->
+      <geom type="capsule" contype="1" conaffinity="0" rgba="0.92 0.92 0.92 1"/>
+      <site size="0.01" rgba="1 0.2 0.2 1"/>
+      <default class="dark">
+        <geom rgba="0.3 0.3 0.32 1"/>
+      </default>
+    </default>
+  </default>
+
+  <asset>
+    <texture name="grid" type="2d" builtin="checker" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3"
+      mark="edge" markrgb="0.8 0.8 0.8" width="300" height="300"/>
+    <material name="grid" texture="grid" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
+  </asset>
+
+  <worldbody>
+    <light name="top" pos="0 0 2" mode="trackcom"/>
+    <geom name="floor" type="plane" size="0 0 0.05" material="grid"/>
+    <body name="link0" childclass="panda">
+      <inertial mass="0.629769" pos="-0.041018 -0.00014 0.049974"
+        fullinertia="0.00315 0.00388 0.004285 8.2904e-7 0.00015 8.2299e-6"/>
+      <geom name="link0_0" class="dark" fromto="-0.0195 -0.0003 0.0128 -0.0102 0 0.0692"
+        size="0.0961"/>
+      <geom name="link0_1" class="dark" fromto="-0.0929 0.0185 0.0166 -0.0914 -0.0212 0.0155"
+        size="0.0656"/>
+      <body name="link1" gravcomp="1" pos="0 0 0.333">
+        <inertial mass="4.970684" pos="0.003875 0.002081 -0.04762"
+          fullinertia="0.70337 0.70661 0.0091170 -0.00013900 0.0067720 0.019169"/>
+        <joint name="joint1"/>
+        <geom name="link1_0" fromto="0.0001 -0.0395 -0.0458 0.0003 0.0004 -0.1487" size="0.0704"/>
+        <geom name="link1_1" fromto="-0.001 -0.0162 -0.0065 0.0009 -0.0745 -0.0074" size="0.0632"/>
+        <body name="link2" gravcomp="1" quat="1 -1 0 0">
+          <inertial mass="0.646926" pos="-0.003141 -0.02872 0.003495"
+            fullinertia="0.0079620 2.8110e-2 2.5995e-2 -3.925e-3 1.0254e-2 7.04e-4"/>
+          <joint name="joint2" range="-1.7628 1.7628"/>
+          <geom name="link2_0" fromto="-0.0004 -0.0054 0.0676 0.0006 -0.0089 0.0148" size="0.0653"/>
+          <geom name="link2_1" fromto="0.0001 -0.0337 0.0449 0 -0.1516 -0.0001" size="0.0699"/>
+          <body name="link3" gravcomp="1" pos="0 -0.316 0" quat="1 1 0 0">
+            <joint name="joint3"/>
+            <inertial mass="3.228604" pos="2.7518e-2 3.9252e-2 -6.6502e-2"
+              fullinertia="3.7242e-2 3.6155e-2 1.083e-2 -4.761e-3 -1.1396e-2 -1.2805e-2"/>
+            <geom name="link3" fromto="0.0832 0.0427 0.0007 0.0013 0.0005 -0.0818" size="0.0688"/>
+            <body name="link4" gravcomp="1" pos="0.0825 0 0" quat="1 1 0 0">
+              <inertial mass="3.587895" pos="-5.317e-2 1.04419e-1 2.7454e-2"
+                fullinertia="2.5853e-2 1.9552e-2 2.8323e-2 7.796e-3 -1.332e-3 8.641e-3"/>
+              <joint name="joint4" range="-3.0718 -0.0698"/>
+              <geom name="link4" fromto="0.0007 -0.0005 0.0428 -0.0817 0.0838 0.0005"
+                size="0.0689"/>
+              <body name="link5" gravcomp="1" pos="-0.0825 0.384 0" quat="1 -1 0 0">
+                <inertial mass="1.225946" pos="-1.1953e-2 4.1065e-2 -3.8437e-2"
+                  fullinertia="3.5549e-2 2.9474e-2 8.627e-3 -2.117e-3 -4.037e-3 2.29e-4"/>
+                <joint name="joint5"/>
+                <geom name="link5_0" fromto="0.0001 0.0003 -0.238 0.0012 0.0169 -0.212"
+                  size="0.0587"/>
+                <geom name="link5_1" fromto="-0.0054 0.0801 -0.017 0 0.0604 -0.0002" size="0.0659"/>
+                <geom name="link5_2" fromto="0.0016 0.0462 -0.1919 0.0012 0.0797 -0.0991"
+                  size="0.0435"/>
+                <body name="link6" gravcomp="1" quat="1 1 0 0">
+                  <inertial mass="1.666555" pos="6.0149e-2 -1.4117e-2 -1.0517e-2"
+                    fullinertia="1.964e-3 4.354e-3 5.433e-3 1.09e-4 -1.158e-3 3.41e-4"/>
+                  <joint name="joint6" range="-0.0175 3.7525"/>
+                  <geom name="link6_0" fromto="0.011 -0.0019 0.0067 0.0439 0.0083 0.005"
+                    size="0.0625"/>
+                  <geom name="link6_1" fromto="0.0759 0.0362 -0.0003 0.0801 -0.032 0.0013"
+                    size="0.0549"/>
+                  <body name="link7" gravcomp="1" pos="0.088 0 0" quat="1 1 0 0">
+                    <inertial mass="7.35522e-01" pos="1.0517e-2 -4.252e-3 6.1597e-2"
+                      fullinertia="1.2516e-2 1.0027e-2 4.815e-3 -4.28e-4 -1.196e-3 -7.41e-4"/>
+                    <joint name="joint7"/>
+                    <geom name="link7" class="dark"
+                      fromto="-0.0052 -0.005 0.0731 0.0332 0.0332 0.0822" size="0.0487"/>
+                    <body name="attachment" pos="0 0 0.107" quat="0.3826834 0 0 0.9238795">
+                      <geom name="tool" fromto="0 0 0 0 0 0.1" size="0.02" rgba="0.95 0.5 0.1 1"/>
+                      <site name="ee" pos="0 0 0.1"/>
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <general class="panda" name="actuator1" joint="joint1" gainprm="4500" biasprm="0 -4500 -450"/>
+    <general class="panda" name="actuator2" joint="joint2" gainprm="4500" biasprm="0 -4500 -450"
+      ctrlrange="-1.7628 1.7628"/>
+    <general class="panda" name="actuator3" joint="joint3" gainprm="3500" biasprm="0 -3500 -350"/>
+    <general class="panda" name="actuator4" joint="joint4" gainprm="3500" biasprm="0 -3500 -350"
+      ctrlrange="-3.0718 -0.0698"/>
+    <general class="panda" name="actuator5" joint="joint5" gainprm="2000" biasprm="0 -2000 -200"
+      forcerange="-12 12"/>
+    <general class="panda" name="actuator6" joint="joint6" gainprm="2000" biasprm="0 -2000 -200"
+      forcerange="-12 12" ctrlrange="-0.0175 3.7525"/>
+    <general class="panda" name="actuator7" joint="joint7" gainprm="2000" biasprm="0 -2000 -200"
+      forcerange="-12 12"/>
+  </actuator>
+
+  <keyframe>
+    <key name="home" qpos="0 0 0 -1.57079 0 1.57079 -0.7853"
+      ctrl="0 0 0 -1.57079 0 1.57079 -0.7853"/>
+  </keyframe>
+</mujoco>

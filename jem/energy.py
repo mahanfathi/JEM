@@ -10,6 +10,9 @@ OptionLinearEnergy   E(s, z, a) = -tau <z, phi(s, a)>,   ||phi(s, a)|| = 1
         inference has a unique optimum that Newton's method finds exactly;
       * |E| <= tau ||z||, so the network cannot inflate the energy scale; sharpness is
         carried by ||z|| (regularised by the prior) and one learned temperature tau.
+        `feature_norm = "ball"` (||phi|| <= 1, the identity inside the ball) keeps the same
+        bound without tying the coordinates to a unit norm; in practice the sphere fits
+        as well, also on the arm.
 
     phi comes in two architectures (`ModelConfig.arch`):
       joint     phi = MLP([s, a]): fully general, but the network runs on every
@@ -74,6 +77,8 @@ class OptionLinearEnergy(nn.Module):
         self.log_scale = nn.Parameter(
             torch.tensor(math.log(cfg.init_scale)), requires_grad=cfg.learn_scale
         )
+        # Prototype options: a few learned option vectors trained as a mixture (objectives.py).
+        self.prototypes = nn.Parameter(torch.zeros(cfg.prototypes, d)) if cfg.prototypes else None
 
     @property
     def scale(self) -> Tensor:
@@ -82,6 +87,8 @@ class OptionLinearEnergy(nn.Module):
     def _normalize(self, f: Tensor) -> Tensor:
         if self.feature_norm == "sphere":
             return f * torch.rsqrt(f.pow(2).sum(-1, keepdim=True) + 1e-6)
+        if self.feature_norm == "ball":  # the identity inside the unit ball, radial outside
+            return f / f.norm(dim=-1, keepdim=True).clamp_min(1.0)
         if self.feature_norm == "tanh":
             return torch.tanh(f)
         if self.feature_norm == "none":
@@ -110,14 +117,30 @@ class OptionLinearEnergy(nn.Module):
         f = torch.einsum("sdp,kp->skd", self._state_matrix(obs), self.action_net(act))
         return self._normalize(f)
 
-    def candidate_features(self, obs: Tensor, act: Tensor, proposals: Tensor) -> Tensor:
-        """(B, N, ds), (B, N, da), (M, da) -> (B, N, 1+M, d); index 0 is the observed action."""
+    def candidate_features(
+        self, obs: Tensor, act: Tensor, proposals: Tensor, own: Tensor | None = None
+    ) -> Tensor:
+        """(B, N, ds), (B, N, da), shared (M, da) -> (B, N, K, d); index 0 is observed.
+
+        Optional extra candidates `own` come after the observed action: per state
+        (B, N, Q, da), or one set per sequence shared by its N steps (B, Q, da), which the
+        factored architecture evaluates once per sequence. K = 1 + Q + M.
+        """
+        per_state = own is not None and own.dim() == obs.dim() + 1
         if self.arch == "joint":
-            return self.features(obs, with_candidates(act, proposals))
+            cand = with_candidates(act, proposals)
+            if own is not None:
+                if not per_state:
+                    own = own.unsqueeze(-3).expand(*obs.shape[:-1], *own.shape[-2:])
+                cand = torch.cat([cand[..., :1, :], own, cand[..., 1:, :]], dim=-2)
+            return self.features(obs, cand)
         w = self._state_matrix(obs)
-        pos = torch.einsum("...dp,...p->...d", w, self.action_net(act))
-        props = torch.einsum("...dp,kp->...kd", w, self.action_net(proposals))
-        return self._normalize(torch.cat([pos.unsqueeze(-2), props], dim=-2))
+        parts = [torch.einsum("...dp,...p->...d", w, self.action_net(act)).unsqueeze(-2)]
+        if own is not None:
+            spec = "...dp,...kp->...kd" if per_state else "...ndp,...kp->...nkd"
+            parts.append(torch.einsum(spec, w, self.action_net(own)))
+        parts.append(torch.einsum("...dp,kp->...kd", w, self.action_net(proposals)))
+        return self._normalize(torch.cat(parts, dim=-2))
 
     def logits(self, obs: Tensor, z: Tensor, act: Tensor) -> Tensor:
         """-E for K candidates: obs (..., ds), z (..., d), act (..., K, da) -> (..., K)."""
